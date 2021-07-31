@@ -67,7 +67,18 @@ impl Event {
 #[derive(Clone, Debug)]
 pub enum Data {
     // Need to encrypt data in message using target public key
-    IndividualMessage(String),
+    IndividualMessage(u128, Vec<u8>),
     GroupMessage(String),
     NewUser { id: u128, pub_key: RsaPublicKey },
+}
+
+impl Data {
+    pub fn new_individual_message(location: u128, pub_key: &RsaPublicKey, message: String) -> Self {
+        let mut rng = rand::thread_rng();
+        let padding = PaddingScheme::new_pkcs1v15_encrypt();
+        let encrypted = pub_key
+            .encrypt(&mut rng, padding, message.as_bytes())
+            .expect("Failed to encrypt individual message");
+        Self::IndividualMessage(location, encrypted)
+    }
 }

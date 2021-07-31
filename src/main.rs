@@ -20,7 +20,11 @@ fn main() {
     let mut genesis: Block = Block::new(None);
 
     // create 2 events
-    let event1: Event = user1.new_event(Data::IndividualMessage(String::from("Message1")));
+    let event1: Event = user1.new_event(Data::new_individual_message(
+        user2.id,
+        &user2.pub_key,
+        String::from("Message1"),
+    ));
     let event2: Event = user1.new_event(Data::GroupMessage(String::from("Message2")));
 
     // add events to block
@@ -34,11 +38,20 @@ fn main() {
     let mut second: Block = Block::new(bc.last_hash());
 
     // more events
-    let event3: Event = user2.new_event(Data::IndividualMessage(String::from("Message3")));
+    let event3: Event = user2.new_event(Data::new_individual_message(
+        user1.id,
+        &user1.pub_key,
+        String::from("Message3"),
+    ));
     let event4: Event = user2.new_event(Data::GroupMessage(String::from("Message4")));
+    let event5: Event = user2.new_event(Data::NewUser {
+        id: user2.id,
+        pub_key: user2.pub_key.clone(),
+    });
 
     second.add_event(event3);
     second.add_event(event4);
+    second.add_event(event5);
 
     bc.append(second).unwrap();
 }
