@@ -1,5 +1,6 @@
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
+use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 
@@ -14,10 +15,11 @@ pub struct Event {
 impl Event {
     /// Create new `Event`
     pub fn new(made_by: u128, data: Data) -> Self {
+        let mut rng = rand::thread_rng();
         Self {
             made_by,
             data,
-            nonce: 0,
+            nonce: rng.gen(),
             signature: None,
         }
     }

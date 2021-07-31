@@ -3,6 +3,7 @@ pub mod events;
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
+use rand::prelude::*;
 use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -109,11 +110,12 @@ pub struct Block {
 impl Block {
     /// Creates a new `Block`
     pub fn new(prev_hash: Option<String>) -> Self {
+        let mut rng = rand::thread_rng();
         Self {
             events: Vec::new(),
             prev_hash,
             hash: None,
-            nonce: 0,
+            nonce: rng.gen(),
         }
     }
 
