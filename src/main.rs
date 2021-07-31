@@ -1,25 +1,17 @@
 use blockchat::blockchain::{
+    accounts::{Account, Role},
     events::{Data, Event},
     Block, BlockChain,
 };
-use rand::rngs::OsRng;
-use rsa::{RsaPrivateKey, RsaPublicKey};
 
 fn main() {
-    let mut rng = OsRng;
-    let bits = 2048;
-    let private_key1 = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-    let public_key1 = RsaPublicKey::from(&private_key1);
-
-    let private_key2 = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-    let public_key2 = RsaPublicKey::from(&private_key2);
-
-    println!("Declared Keys");
+    let user1 = Account::new(Role::User);
+    let user2 = Account::new(Role::User);
 
     let mut bc: BlockChain = BlockChain::new();
 
-    bc.new_user(1, public_key1.clone());
-    bc.new_user(2, public_key2.clone());
+    bc.new_user(user1.id, user1.pub_key.clone());
+    bc.new_user(user2.id, user2.pub_key.clone());
 
     println!("Added Public Keys");
 
@@ -27,10 +19,10 @@ fn main() {
 
     genesis.set_nonce(123);
 
-    let mut event1: Event = Event::new(1, Data::IndividualMessage(String::from("Message1")));
-    event1.sign(&private_key1);
-    let mut event2: Event = Event::new(1, Data::GroupMessage(String::from("Message2")));
-    event2.sign(&private_key1);
+    let mut event1: Event = Event::new(user1.id, Data::IndividualMessage(String::from("Message1")));
+    user1.sign_event(&mut event1);
+    let mut event2: Event = Event::new(user1.id, Data::GroupMessage(String::from("Message2")));
+    user1.sign_event(&mut event2);
 
     genesis.add_event(event1);
     genesis.add_event(event2);
@@ -41,10 +33,10 @@ fn main() {
 
     second.set_nonce(321);
 
-    let mut event3: Event = Event::new(2, Data::IndividualMessage(String::from("Message3")));
-    event3.sign(&private_key2);
-    let mut event4: Event = Event::new(2, Data::GroupMessage(String::from("Message4")));
-    event4.sign(&private_key2);
+    let mut event3: Event = Event::new(user2.id, Data::IndividualMessage(String::from("Message3")));
+    user2.sign_event(&mut event3);
+    let mut event4: Event = Event::new(user2.id, Data::GroupMessage(String::from("Message4")));
+    user2.sign_event(&mut event4);
 
     second.add_event(event3);
     second.add_event(event4);

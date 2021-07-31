@@ -1,7 +1,7 @@
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
-use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
+use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -47,14 +47,8 @@ impl Event {
         }
     }
 
-    pub fn sign(&mut self, priv_key: &RsaPrivateKey) {
-        let bytes = self.calculate_hash();
-        let padding = PaddingScheme::new_pkcs1v15_sign(None);
-        let enc_data = priv_key
-            .sign(padding, &bytes[..])
-            .expect("failed to encrypt");
-
-        self.signature = Some(enc_data);
+    pub fn sign(&mut self, signature: Option<Vec<u8>>) {
+        self.signature = signature;
     }
 
     pub fn verify_sign(&self, pub_key: &RsaPublicKey) -> bool {
