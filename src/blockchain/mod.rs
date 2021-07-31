@@ -1,6 +1,10 @@
+pub mod events;
+
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
+
+use events::Event;
 
 #[derive(Clone, Debug)]
 pub struct BlockChain {
@@ -40,6 +44,9 @@ impl BlockChain {
         // TODO: Check for nonces that have already been used
 
         // TODO: Do something with each event in the Block
+        for event in block.events.iter() {
+            event.execute();
+        }
 
         // If valid, append to `Blockchain` and return Ok
         self.chain.push(block);
@@ -139,26 +146,5 @@ impl Block {
     /// Gets the number of events in a given `Block`
     pub fn get_event_count(&self) -> usize {
         self.events.len()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Event {
-    pub data: String,
-    pub nonce: u128,
-}
-
-impl Event {
-    /// Create new `Event`
-    pub fn new(data: String) -> Self {
-        Self { data, nonce: 0 }
-    }
-
-    /// Calculate hash of the `Event`
-    pub fn calculate_hash(&self) -> Vec<u8> {
-        let mut hasher = Sha3::sha3_256();
-        let event_as_string = format!("{:?}", (&self.data, &self.nonce));
-        hasher.input_str(&event_as_string);
-        return Vec::from(hasher.result_str().as_bytes());
     }
 }
