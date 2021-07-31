@@ -2,9 +2,8 @@ use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Event {
     pub made_by: u128,
     pub data: Data,
@@ -65,8 +64,10 @@ impl Event {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub enum Data {
+    // Need to encrypt data in message using target public key
     IndividualMessage(String),
     GroupMessage(String),
+    NewUser { id: u128, pub_key: RsaPublicKey },
 }

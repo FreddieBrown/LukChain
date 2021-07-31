@@ -9,7 +9,6 @@ use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::RsaPublicKey;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use events::Event;
@@ -103,7 +102,7 @@ impl BlockChain {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Block {
     pub events: Vec<Event>,
     pub prev_hash: Option<String>,

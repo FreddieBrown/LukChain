@@ -5,38 +5,37 @@ use blockchat::blockchain::{
 };
 
 fn main() {
+    // Creat users
     let user1 = Account::new(Role::User);
     let user2 = Account::new(Role::User);
 
+    // Create blockchain
     let mut bc: BlockChain = BlockChain::new();
 
+    // register users
     bc.new_user(user1.id, user1.pub_key.clone());
     bc.new_user(user2.id, user2.pub_key.clone());
 
-    println!("Added Public Keys");
-
+    // Create starting block of chain
     let mut genesis: Block = Block::new(None);
 
-    genesis.set_nonce(123);
+    // create 2 events
+    let event1: Event = user1.new_event(Data::IndividualMessage(String::from("Message1")));
+    let event2: Event = user1.new_event(Data::GroupMessage(String::from("Message2")));
 
-    let mut event1: Event = Event::new(user1.id, Data::IndividualMessage(String::from("Message1")));
-    user1.sign_event(&mut event1);
-    let mut event2: Event = Event::new(user1.id, Data::GroupMessage(String::from("Message2")));
-    user1.sign_event(&mut event2);
-
+    // add events to block
     genesis.add_event(event1);
     genesis.add_event(event2);
 
+    // add event to blockchain
     bc.append(genesis).unwrap();
 
+    // create second block
     let mut second: Block = Block::new(bc.last_hash());
 
-    second.set_nonce(321);
-
-    let mut event3: Event = Event::new(user2.id, Data::IndividualMessage(String::from("Message3")));
-    user2.sign_event(&mut event3);
-    let mut event4: Event = Event::new(user2.id, Data::GroupMessage(String::from("Message4")));
-    user2.sign_event(&mut event4);
+    // more events
+    let event3: Event = user2.new_event(Data::IndividualMessage(String::from("Message3")));
+    let event4: Event = user2.new_event(Data::GroupMessage(String::from("Message4")));
 
     second.add_event(event3);
     second.add_event(event4);

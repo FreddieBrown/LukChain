@@ -1,4 +1,4 @@
-use crate::blockchain::events::Event;
+use crate::blockchain::events::{Data, Event};
 use rand::prelude::*;
 use rsa::{PaddingScheme, RsaPrivateKey, RsaPublicKey};
 
@@ -22,6 +22,12 @@ impl Account {
             pub_key,
             priv_key,
         }
+    }
+
+    pub fn new_event(&self, data: Data) -> Event {
+        let mut event = Event::new(self.id, data);
+        self.sign_event(&mut event);
+        event
     }
 
     pub fn sign_event(&self, event: &mut Event) {
