@@ -1,5 +1,8 @@
 pub mod events;
 
+#[cfg(test)]
+mod tests;
+
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
