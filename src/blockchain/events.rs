@@ -1,3 +1,5 @@
+use crate::blockchain::BlockChain;
+
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
@@ -70,6 +72,7 @@ pub enum Data {
     IndividualMessage(u128, Vec<u8>),
     GroupMessage(String),
     NewUser { id: u128, pub_key: RsaPublicKey },
+    CurrentState(BlockChain),
 }
 
 impl Data {

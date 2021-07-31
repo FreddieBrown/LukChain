@@ -1,4 +1,4 @@
 extern crate crypto;
 
 pub mod blockchain;
-pub mod messages;
+pub mod connections;
