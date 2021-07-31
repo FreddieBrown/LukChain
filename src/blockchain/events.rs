@@ -38,7 +38,15 @@ impl Event {
     }
 
     pub fn execute(&self, pub_key: Option<&RsaPublicKey>) {
-        println!("{:?}", self.data);
+        match self.data.clone() {
+            Data::IndividualMessage(id, _) => {
+                println!("SENDER {} FOR {}: ENCRYPTED", self.made_by, id)
+            }
+            Data::GroupMessage(m) => println!("MESSAGE: {}", m),
+            Data::NewUser { id, .. } => println!("NEW USER: {}", id),
+            Data::CurrentState(_) => println!("BLOCKCHAIN STATE"),
+        };
+
         if self.signature.is_some() {
             if self.verify_sign(pub_key.unwrap()) {
                 println!("Message correctly signed");

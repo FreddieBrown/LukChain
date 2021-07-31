@@ -1,8 +1,9 @@
 use crate::blockchain::{
-    accounts::{Account, Role},
     events::{Data, Event},
     Block, BlockChain,
 };
+
+use crate::accounts::{Account, Role};
 
 // Basic tests
 #[test]
@@ -57,12 +58,4 @@ fn sign_message_with_wrong_key() {
     let mut event: Event = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
     user1.sign_event(&mut event);
     assert!(!event.verify_sign(&user.pub_key));
-}
-
-#[test]
-fn account_sign_event() {
-    // Create already signed event
-    let user: Account = Account::new(Role::User);
-    let event: Event = user.new_event(Data::GroupMessage(String::from("Hello")));
-    assert!(event.verify_sign(&user.pub_key));
 }

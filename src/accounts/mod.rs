@@ -1,6 +1,12 @@
+pub mod interfaces;
+
+#[cfg(test)]
+mod tests;
+
 use crate::blockchain::events::{Data, Event};
+
 use rand::prelude::*;
-use rsa::{PaddingScheme, RsaPrivateKey, RsaPublicKey};
+use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 
 #[derive(Clone, Debug)]
 pub struct Account {
@@ -39,6 +45,24 @@ impl Account {
             .expect("failed to encrypt");
 
         event.sign(Some(enc_data));
+    }
+
+    pub fn decrypt_msg(&self, enc_data: Vec<u8>) -> String {
+        let padding = PaddingScheme::new_pkcs1v15_encrypt();
+        let dec_data = self
+            .priv_key
+            .decrypt(padding, &enc_data)
+            .expect("failed to decrypt");
+
+        String::from_utf8(dec_data).unwrap()
+    }
+
+    pub fn encrypt_msg(&self, data: Vec<u8>) -> Vec<u8> {
+        let mut rng = rand::thread_rng();
+        let padding = PaddingScheme::new_pkcs1v15_encrypt();
+        self.priv_key
+            .encrypt(&mut rng, padding, &data)
+            .expect("failed to decrypt")
     }
 }
 

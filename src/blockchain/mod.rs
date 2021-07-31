@@ -1,4 +1,3 @@
-pub mod accounts;
 pub mod events;
 
 #[cfg(test)]

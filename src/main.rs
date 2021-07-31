@@ -1,7 +1,9 @@
-use blockchat::blockchain::{
+use blockchat::{
     accounts::{Account, Role},
-    events::{Data, Event},
-    Block, BlockChain,
+    blockchain::{
+        events::{Data, Event},
+        Block, BlockChain,
+    },
 };
 
 fn main() {
