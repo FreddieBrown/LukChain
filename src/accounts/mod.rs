@@ -1,9 +1,10 @@
-pub mod interfaces;
-
 #[cfg(test)]
 mod tests;
 
-use crate::blockchain::events::{Data, Event};
+use crate::blockchain::{
+    events::{Data, Event},
+    BlockChain,
+};
 
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
@@ -14,6 +15,13 @@ pub struct Account {
     pub role: Role,
     pub pub_key: RsaPublicKey,
     pub(crate) priv_key: RsaPrivateKey,
+    pub(crate) bc: BlockChain,
+}
+
+#[derive(Clone, Debug)]
+pub enum Role {
+    User,
+    Miner,
 }
 
 impl Account {
@@ -27,7 +35,12 @@ impl Account {
             role,
             pub_key,
             priv_key,
+            bc: BlockChain::new(),
         }
+    }
+
+    fn update_blockchain(&mut self, new_bc: BlockChain) {
+        self.bc = new_bc;
     }
 
     pub fn new_event(&self, data: Data) -> Event {
@@ -64,10 +77,4 @@ impl Account {
             .encrypt(&mut rng, padding, &data)
             .expect("failed to decrypt")
     }
-}
-
-#[derive(Clone, Debug)]
-pub enum Role {
-    User,
-    Miner,
 }

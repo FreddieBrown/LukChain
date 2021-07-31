@@ -13,6 +13,15 @@ pub struct Event {
     signature: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Debug)]
+pub enum Data {
+    // Need to encrypt data in message using target public key
+    IndividualMessage(u128, Vec<u8>),
+    GroupMessage(String),
+    NewUser { id: u128, pub_key: RsaPublicKey },
+    CurrentState(BlockChain),
+}
+
 impl Event {
     /// Create new `Event`
     pub fn new(made_by: u128, data: Data) -> Self {
@@ -72,15 +81,6 @@ impl Event {
         }
         true
     }
-}
-
-#[derive(Clone, Debug)]
-pub enum Data {
-    // Need to encrypt data in message using target public key
-    IndividualMessage(u128, Vec<u8>),
-    GroupMessage(String),
-    NewUser { id: u128, pub_key: RsaPublicKey },
-    CurrentState(BlockChain),
 }
 
 impl Data {

@@ -19,6 +19,14 @@ pub struct BlockChain {
     pending_events: Vec<Event>,
 }
 
+#[derive(Clone, Debug)]
+pub struct Block {
+    pub events: Vec<Event>,
+    pub prev_hash: Option<String>,
+    pub hash: Option<String>,
+    pub nonce: u128,
+}
+
 impl BlockChain {
     /// Creates a new `Blockchain` instance
     pub fn new() -> Self {
@@ -99,14 +107,6 @@ impl BlockChain {
         // TODO: In future generate user id and return it
         self.users.insert(id, pub_key);
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct Block {
-    pub events: Vec<Event>,
-    pub prev_hash: Option<String>,
-    pub hash: Option<String>,
-    pub nonce: u128,
 }
 
 impl Block {
