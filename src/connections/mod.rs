@@ -1,5 +1,1 @@
-trait Interface {}
-
-trait Local: Interface {}
-
-trait Global: Interface {}
+pub mod interfaces;
