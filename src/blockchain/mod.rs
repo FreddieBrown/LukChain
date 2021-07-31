@@ -3,12 +3,16 @@ pub mod events;
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
+use rsa::RsaPublicKey;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use events::Event;
 
 #[derive(Clone, Debug)]
 pub struct BlockChain {
     pub chain: Vec<Block>,
+    pub users: HashMap<u128, RsaPublicKey>,
     pending_events: Vec<Event>,
 }
 
@@ -17,6 +21,7 @@ impl BlockChain {
     pub fn new() -> Self {
         Self {
             chain: Vec::new(),
+            users: HashMap::new(),
             pending_events: Vec::new(),
         }
     }
@@ -43,9 +48,13 @@ impl BlockChain {
 
         // TODO: Check for nonces that have already been used
 
-        // TODO: Do something with each event in the Block
+        // Go through each event and check the data enclosed
         for event in block.events.iter() {
-            event.execute();
+            if self.users.contains_key(&event.made_by) {
+                event.execute(self.users.get(&event.made_by));
+            } else {
+                event.execute(None);
+            }
         }
 
         // If valid, append to `Blockchain` and return Ok
@@ -82,9 +91,14 @@ impl BlockChain {
         }
         Ok(())
     }
+
+    pub fn new_user(&mut self, id: u128, pub_key: RsaPublicKey) {
+        // TODO: In future generate user id and return it
+        self.users.insert(id, pub_key);
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Block {
     pub events: Vec<Event>,
     pub prev_hash: Option<String>,
