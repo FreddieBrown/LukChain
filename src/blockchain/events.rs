@@ -14,7 +14,7 @@ pub struct Event {
     pub made_by: u128,
     pub data: Data,
     pub nonce: u128,
-    signature: Option<Vec<u8>>,
+    pub signature: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -46,10 +46,6 @@ impl Event {
         return Vec::from(hasher.result_str().as_bytes());
     }
 
-    pub fn get_sign(&self) -> Option<Vec<u8>> {
-        self.signature.clone()
-    }
-
     pub fn execute(&self, pub_key: Option<&RsaPublicKey>) {
         match self.data.clone() {
             Data::IndividualMessage(id, _) => {
@@ -75,7 +71,7 @@ impl Event {
 
     pub fn verify_sign(&self, pub_key: &RsaPublicKey) -> bool {
         let hash = self.calculate_hash();
-        if let Some(s) = self.get_sign() {
+        if let Some(s) = self.signature.clone() {
             let padding = PaddingScheme::new_pkcs1v15_sign(None);
 
             return match pub_key.verify(padding, &hash, &s) {
