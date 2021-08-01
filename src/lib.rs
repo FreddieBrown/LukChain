@@ -1,4 +1,4 @@
 extern crate crypto;
 
-pub mod accounts;
 pub mod blockchain;
+pub mod network;

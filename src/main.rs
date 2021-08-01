@@ -1,15 +1,18 @@
 use blockchat::{
-    accounts::{Account, Role},
     blockchain::{
         events::{Data, Event},
         Block, BlockChain,
     },
+    network::{Account, Role},
 };
 
 /// Function to perform simulated user action
 fn run_user() {
     let mut account: Account = Account::new(Role::User);
+    // Connect to blockchain
+
     // Create event
+    let event: Event = account.new_event(Data::GroupMessage(String::from("Hello")));
     // Send to neighbours
     // Listen to connections and pass on messages
     // Repeat x3

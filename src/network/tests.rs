@@ -1,6 +1,6 @@
 use crate::{
-    accounts::{Account, Role},
     blockchain::events::{Data, Event},
+    network::{Account, Role},
 };
 
 #[test]
