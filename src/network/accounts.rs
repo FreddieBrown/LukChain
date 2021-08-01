@@ -1,6 +1,6 @@
 //! Information about the participant needed for network participation
 
-use crate::blockchain::events::{Data, Event};
+use crate::blockchain::{Data, Event};
 
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};

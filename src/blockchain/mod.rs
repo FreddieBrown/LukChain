@@ -1,6 +1,6 @@
 //! Data structures and functions needed for the blockchain
 
-pub mod events;
+mod events;
 
 #[cfg(test)]
 mod tests;
@@ -13,7 +13,7 @@ use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use events::Event;
+pub use self::events::{Data, Event};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockChain {

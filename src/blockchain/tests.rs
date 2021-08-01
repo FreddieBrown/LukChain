@@ -3,7 +3,7 @@ use crate::blockchain::{
     Block, BlockChain,
 };
 
-use crate::network::accounts::{Account, Role};
+use crate::network::{Account, Role};
 
 // Basic tests
 #[test]

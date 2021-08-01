@@ -1,9 +1,6 @@
 use blockchat::{
-    blockchain::{
-        events::{Data, Event},
-        Block, BlockChain,
-    },
-    network::accounts::{Account, Role},
+    blockchain::{Block, BlockChain, Data, Event},
+    network::{Account, Role},
 };
 
 /// Function to perform simulated user action

@@ -1,11 +1,17 @@
 //! Main running code for all network interactions
 
-pub mod accounts;
-pub mod nodes;
+mod accounts;
+mod network_message;
+mod nodes;
+
 #[cfg(test)]
 mod tests;
 
-use crate::network::{accounts::Role, nodes::Node};
+pub use self::{
+    accounts::{Account, Role},
+    network_message::{MessageData, NetworkMessage},
+    nodes::Node,
+};
 
 use anyhow::Result;
 use std::sync::Arc;
