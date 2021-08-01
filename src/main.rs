@@ -3,7 +3,7 @@ use blockchat::{
         events::{Data, Event},
         Block, BlockChain,
     },
-    network::{Account, Role},
+    network::accounts::{Account, Role},
 };
 
 /// Function to perform simulated user action

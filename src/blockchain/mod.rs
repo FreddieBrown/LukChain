@@ -1,3 +1,5 @@
+//! Data structures and functions needed for the blockchain
+
 pub mod events;
 
 #[cfg(test)]
@@ -8,18 +10,19 @@ use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::RsaPublicKey;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use events::Event;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockChain {
     pub chain: Vec<Block>,
     pub users: HashMap<u128, RsaPublicKey>,
     pending_events: Vec<Event>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub events: Vec<Event>,
     pub prev_hash: Option<String>,

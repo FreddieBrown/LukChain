@@ -1,3 +1,5 @@
+//! Defining base element in the blockchain
+
 use crate::blockchain::BlockChain;
 
 use crypto::digest::Digest;
@@ -5,7 +7,9 @@ use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
 
-#[derive(Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Event {
     pub made_by: u128,
     pub data: Data,
@@ -13,7 +17,7 @@ pub struct Event {
     signature: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Data {
     // Need to encrypt data in message using target public key
     IndividualMessage(u128, Vec<u8>),
