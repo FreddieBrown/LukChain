@@ -14,7 +14,7 @@ impl NetworkMessage {
         Self { data }
     }
 
-    /// Reads a `NetworkMessage` from a async stream
+    /// Reads a [`NetworkMessage`] from a async stream
     pub async fn from_stream<R: AsyncReadExt + Send + Unpin>(
         stream: &mut R,
         mut buffer: &mut [u8],
@@ -42,7 +42,7 @@ impl NetworkMessage {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
-    /// Converts a `NetworkMessage` into a sendable form in bytes
+    /// Converts a [`NetworkMessage`] into a sendable form in bytes
     pub fn as_bytes(&self) -> Vec<u8> {
         // Convert the message to bytes
         let bytes = serde_json::to_vec(&self).unwrap();
@@ -60,4 +60,5 @@ impl NetworkMessage {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MessageData {
     Event(Event),
+    InitialID(u128),
 }
