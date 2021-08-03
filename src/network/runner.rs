@@ -10,6 +10,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
+use std::ops::DerefMut;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
 
@@ -33,7 +34,7 @@ async fn inbound(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<(
     // Thread to go through all connections and deal with incoming messages (reactive)
     let node_copy = Arc::clone(&node);
     let cp_copy = Arc::clone(&connect_pool);
-    task::spawn(async move { message_state_machine(node_copy, cp_copy).await.unwrap() }).await?;
+    task::spawn(async move { check_connections(node_copy, cp_copy).await.unwrap() }).await?;
 
     Ok(())
 }
@@ -78,6 +79,10 @@ async fn incoming_connections(connect_pool: Arc<ConnectionPool>) -> Result<()> {
     Ok(())
 }
 
+/// Takes in a [`TcpStream`] and adds it to the [`ConnectionPool`]
+///
+/// Function is given a [`TcpStream`]. It then gets the ID from the
+/// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
 async fn process_connection(
     mut stream: TcpStream,
     connect_pool: Arc<ConnectionPool>,
@@ -94,6 +99,7 @@ async fn process_connection(
     Ok(())
 }
 
+/// Finds the [`MessageData::InitialID`] in a [`TcpStream`]
 async fn initial_stream_handler(stream: &mut TcpStream) -> Option<u128> {
     let mut buffer = [0_u8; 4096];
     match NetworkMessage::from_stream(stream, &mut buffer).await {
@@ -105,10 +111,69 @@ async fn initial_stream_handler(stream: &mut TcpStream) -> Option<u128> {
     }
 }
 
-async fn message_state_machine(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+/// Goes through each [`Connection`] and checks to see if they contain a [`NetworkMessage`]
+async fn check_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+    let conns = connect_pool.map.read().await;
+
+    for (_, conn) in conns.iter() {
+        let stream_lock = conn.get_tcp();
+
+        let node_cp = Arc::clone(&node);
+
+        task::spawn(async move {
+            let mut stream = stream_lock.write().await;
+            let mut buffer = [0_u8; 4096];
+
+            // Check to see if connection has a message
+            let peeked = stream.peek(&mut buffer).await.unwrap();
+
+            // If it does, pass to state machine
+            if peeked > 0 {
+                let message: NetworkMessage =
+                    NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
+                        .await
+                        .map_err(|_| Error::msg("Error with stream"))
+                        .unwrap();
+
+                state_machine(node_cp, stream.deref_mut(), message)
+                    .await
+                    .unwrap();
+            }
+            // if not, move on
+        });
+    }
     Ok(())
 }
 
+/// Deals with incoming messages from each [`Connection`] in the [`ConnectionPool`]
+///
+/// Listens to each [`Connection`] and consumes any messages from the associated [`TcpStream`].
+/// This message is then dealt with. Each [`NetworkMessage`] is processed using a state machine
+/// structure, which is best suited to the unpredictable nature of the incoming messages.
+async fn state_machine(
+    node: Arc<Node>,
+    stream: &mut TcpStream,
+    message: NetworkMessage,
+) -> Result<()> {
+    Ok(())
+}
+
+/// Forges new outgoing connections and adds them to the [`ConnectionPool`].
+///
+/// Consumes data from pipeline which instructs it to perform certain actions. This could be to
+/// try and create a connection with another member of the network via a [`TcpStream`].
 async fn outgoing_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+    Ok(())
+}
+
+/// Sends a new message to a [`Connection`] in [`ConnectionPool`]
+///
+/// Takes in a new [`NetworkMessage`] and distributes it to a [`Connection`] in the
+/// [`ConnectionPool`] so they are aware of the information which is bein spread.
+async fn send_message(
+    node: Arc<Node>,
+    stream: &mut TcpStream,
+    message: NetworkMessage,
+) -> Result<()> {
     Ok(())
 }

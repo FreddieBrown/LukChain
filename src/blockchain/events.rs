@@ -23,7 +23,6 @@ pub enum Data {
     IndividualMessage(u128, Vec<u8>),
     GroupMessage(String),
     NewUser { id: u128, pub_key: RsaPublicKey },
-    CurrentState(BlockChain),
 }
 
 impl Event {
@@ -53,7 +52,6 @@ impl Event {
             }
             Data::GroupMessage(m) => println!("MESSAGE: {}", m),
             Data::NewUser { id, .. } => println!("NEW USER: {}", id),
-            Data::CurrentState(_) => println!("BLOCKCHAIN STATE"),
         };
 
         if self.signature.is_some() {
