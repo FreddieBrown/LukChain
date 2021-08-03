@@ -136,9 +136,7 @@ async fn check_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -
                         .map_err(|_| Error::msg("Error with stream"))
                         .unwrap();
 
-                state_machine(node_cp, stream.deref_mut(), message)
-                    .await
-                    .unwrap();
+                state_machine(node_cp, message).await.unwrap();
             }
             // if not, move on
         });
@@ -151,16 +149,28 @@ async fn check_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -
 /// Listens to each [`Connection`] and consumes any messages from the associated [`TcpStream`].
 /// This message is then dealt with. Each [`NetworkMessage`] is processed using a state machine
 /// structure, which is best suited to the unpredictable nature of the incoming messages.
-async fn state_machine(
-    node: Arc<Node>,
-    stream: &mut TcpStream,
-    message: NetworkMessage,
-) -> Result<()> {
+async fn state_machine(node: Arc<Node>, message: NetworkMessage) -> Result<()> {
     match message.data {
-        MessageData::Event(e) => Ok(()),
-        MessageData::Block(b) => Ok(()),
-        MessageData::State(bc) => Ok(()),
-        MessageData::InitialID(i) => Ok(()),
+        MessageData::Event(e) => {
+            // Pass onto other connections (prioritise miners)
+            Ok(())
+        }
+        MessageData::Block(b) => {
+            // Check if alreday in Blockchain
+            // If not in blockchain (and is valid),
+            // add to blockchain
+            // pass onto other connected nodes
+            // Ignore if already in blockchain
+            Ok(())
+        }
+        MessageData::State(bc) => {
+            // Check if valid
+            // If valid, check if it is a subchain of current blockchain
+            //     If shorter, ignore
+            //     If longer and contains more than half of original chain, replace
+            // If not valid, ignore
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
