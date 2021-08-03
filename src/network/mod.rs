@@ -2,7 +2,7 @@
 
 mod accounts;
 mod connections;
-mod network_message;
+mod messages;
 mod nodes;
 mod runner;
 
@@ -12,7 +12,7 @@ mod tests;
 pub use self::{
     accounts::{Account, Role},
     connections::{Connection, ConnectionPool},
-    network_message::{MessageData, NetworkMessage},
+    messages::{MessageData, NetworkMessage, ProcessMessage},
     nodes::Node,
     runner::run,
 };

@@ -2,7 +2,7 @@
 use crate::network::{
     accounts::Role,
     connections::{Connection, ConnectionPool},
-    network_message::{MessageData, NetworkMessage},
+    messages::{MessageData, NetworkMessage, ProcessMessage},
     nodes::Node,
 };
 
@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use std::ops::DerefMut;
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
 
@@ -155,7 +156,13 @@ async fn state_machine(
     stream: &mut TcpStream,
     message: NetworkMessage,
 ) -> Result<()> {
-    Ok(())
+    match message.data {
+        MessageData::Event(e) => Ok(()),
+        MessageData::Block(b) => Ok(()),
+        MessageData::State(bc) => Ok(()),
+        MessageData::InitialID(i) => Ok(()),
+        _ => Ok(()),
+    }
 }
 
 /// Forges new outgoing connections and adds them to the [`ConnectionPool`].
@@ -163,6 +170,12 @@ async fn state_machine(
 /// Consumes data from pipeline which instructs it to perform certain actions. This could be to
 /// try and create a connection with another member of the network via a [`TcpStream`].
 async fn outgoing_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+    // Read pipeline for new messages
+    // When new message comes through pipeline
+    //     Take message
+    //     Process message by reading using match to determine what to do
+    //     take action based on message
+    // loop
     Ok(())
 }
 
@@ -170,10 +183,8 @@ async fn outgoing_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>
 ///
 /// Takes in a new [`NetworkMessage`] and distributes it to a [`Connection`] in the
 /// [`ConnectionPool`] so they are aware of the information which is bein spread.
-async fn send_message(
-    node: Arc<Node>,
-    stream: &mut TcpStream,
-    message: NetworkMessage,
-) -> Result<()> {
+async fn send_message(stream: &mut TcpStream, message: NetworkMessage) -> Result<()> {
+    let bytes_message = message.as_bytes();
+    stream.write_all(&bytes_message).await?;
     Ok(())
 }
