@@ -114,6 +114,14 @@ impl BlockChain {
         Ok(())
     }
 
+    /// Goes through the [`BlockChain`] and checks if [`Event`]
+    /// is already in [`BlockChain`]
+    pub fn contains(&self, event: &Event) -> bool {
+        self.chain
+            .iter()
+            .fold(false, |a, b| (b.events.contains(event)) || a)
+    }
+
     pub fn new_user(&mut self, id: u128, pub_key: RsaPublicKey) {
         // TODO: In future generate user id and return it
         self.users.insert(id, pub_key);

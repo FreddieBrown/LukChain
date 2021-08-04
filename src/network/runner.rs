@@ -255,8 +255,9 @@ async fn recv_state_machine(
                 Role::Miner => {
                     debug!("Recv Event: {:?}", e);
                     let mut unlocked_events = node.loose_events.write().await;
-                    // Check if event is already in loose_events
-                    if !unlocked_events.contains(&e) {
+                    let mut bc_unlocked = node.blockchain.write().await;
+                    // Check if event is already in loose_events and not in blockchain
+                    if !unlocked_events.contains(&e) && !bc_unlocked.contains(&e) {
                         debug!("Event is new");
                         // If it is not, add to set
                         unlocked_events.push(e.clone());
@@ -264,7 +265,6 @@ async fn recv_state_machine(
                         // TODO: Abstract out threshold size
                         if unlocked_events.len() > 100 {
                             debug!("Building new block");
-                            let mut bc_unlocked = node.blockchain.write().await;
                             let last_hash = bc_unlocked.last_hash();
                             let mut block: Block = Block::new(last_hash);
                             block.add_events(unlocked_events.clone());
