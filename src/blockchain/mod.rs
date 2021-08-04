@@ -11,18 +11,19 @@ use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 
 pub use self::events::{Data, Event};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BlockChain {
     pub chain: Vec<Block>,
     pub users: HashMap<u128, RsaPublicKey>,
     pending_events: Vec<Event>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Block {
     pub events: Vec<Event>,
     pub prev_hash: Option<String>,
@@ -109,6 +110,29 @@ impl BlockChain {
     pub fn new_user(&mut self, id: u128, pub_key: RsaPublicKey) {
         // TODO: In future generate user id and return it
         self.users.insert(id, pub_key);
+    }
+
+    /// Length of underlying blockchain
+    pub fn len(&self) -> usize {
+        self.chain.len()
+    }
+
+    /// Calculates the percentage similarity with compared blockchain
+    pub fn chain_overlap(&self, chain: &BlockChain) -> f64 {
+        let mut counter = 0;
+        for (base, comp) in self.chain.iter().zip(chain.chain.iter()) {
+            if base == comp {
+                counter += 1;
+            } else {
+                break;
+            }
+        }
+        (counter as f64) / (self.len() as f64)
+    }
+
+    /// Check if block is in chain
+    pub fn in_chain(&self, block: &Block) -> bool {
+        self.chain.iter().filter(|b| b == &block).count() > 0
     }
 }
 

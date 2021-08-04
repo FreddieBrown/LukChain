@@ -4,10 +4,11 @@ use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
+use std::cmp::PartialEq;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Event {
     pub made_by: u128,
     pub data: Data,
@@ -15,7 +16,7 @@ pub struct Event {
     pub signature: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Data {
     // Need to encrypt data in message using target public key
     IndividualMessage(u128, Vec<u8>),

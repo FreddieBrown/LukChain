@@ -7,43 +7,105 @@ use crate::network::{
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
+use std::ops::DerefMut;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use anyhow::{Error, Result};
-use std::ops::DerefMut;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{
+    mpsc::{self, Receiver, Sender},
+    Notify, RwLock,
+};
 use tokio::task;
+
+/// Synchronisation struct to maintain the job queue
+pub struct JobSync {
+    permits: AtomicUsize,
+    notify: Notify,
+    sender: Sender<ProcessMessage>,
+    receiver: RwLock<Receiver<ProcessMessage>>,
+}
+
+impl JobSync {
+    /// Creates a new instance of JobSync
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel::<ProcessMessage>(1000);
+        Self {
+            permits: AtomicUsize::new(0),
+            notify: Notify::new(),
+            sender: tx,
+            receiver: RwLock::new(rx),
+        }
+    }
+
+    /// Adds a new permit to the synchronisation mechanism
+    pub fn new_permit(&self) {
+        self.permits.fetch_add(1, Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+
+    /// Claims a permit from the group of permits
+    ///
+    /// Claims a permit if one exists, if no permits exist, it will
+    /// wait until a permit is available.
+    pub fn claim_permit(&self) {
+        let permits: usize = self.permits.load(Ordering::SeqCst);
+        if permits == 0 {
+            self.notify.notified();
+        }
+        self.permits.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 pub async fn run(role: Role) -> Result<()> {
     let node: Arc<Node> = Arc::new(Node::new(role));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    inbound(Arc::clone(&node), Arc::clone(&connect_pool))
+
+    let sync: Arc<JobSync> = Arc::new(JobSync::new());
+
+    let _inbound_fut = inbound(
+        Arc::clone(&node),
+        Arc::clone(&connect_pool),
+        Arc::clone(&sync),
+    );
+
+    task::spawn(async move {
+        outgoing_connections(
+            Arc::clone(&node),
+            Arc::clone(&connect_pool),
+            Arc::clone(&sync),
+        )
         .await
-        .unwrap();
-    outbound(Arc::clone(&node), Arc::clone(&connect_pool))
-        .await
-        .unwrap();
+        .unwrap()
+    })
+    .await?;
     Ok(())
 }
 
-async fn inbound(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+async fn inbound(
+    node: Arc<Node>,
+    connect_pool: Arc<ConnectionPool>,
+    sync: Arc<JobSync>,
+) -> Result<()> {
     // Thread to listen for inbound connections (reactive)
     //     Put all connections into connect pool
     let cp_copy = Arc::clone(&connect_pool);
-    task::spawn(async move { incoming_connections(cp_copy).await.unwrap() }).await?;
+    let node_copy = Arc::clone(&node);
+    task::spawn(async move { incoming_connections(node_copy, cp_copy).await.unwrap() }).await?;
     // Thread to go through all connections and deal with incoming messages (reactive)
     let node_copy = Arc::clone(&node);
     let cp_copy = Arc::clone(&connect_pool);
-    task::spawn(async move { check_connections(node_copy, cp_copy).await.unwrap() }).await?;
-
-    Ok(())
-}
-
-async fn outbound(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
-    // Thread to forge outgoing connections and send outgoing messages (proactive)
-    //     Put all connections into connect pool
-    task::spawn(async move { outgoing_connections(node, connect_pool).await.unwrap() }).await?;
+    let sync_copy = Arc::clone(&sync);
+    task::spawn(async move {
+        check_connections(node_copy, cp_copy, sync_copy)
+            .await
+            .unwrap()
+    })
+    .await?;
 
     Ok(())
 }
@@ -53,7 +115,7 @@ async fn outbound(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<
 /// Listens to a inbound port and accepts connections coming from other
 /// participants in the network. Takes the connections and inserts them
 /// into the `connect_pool`.
-async fn incoming_connections(connect_pool: Arc<ConnectionPool>) -> Result<()> {
+async fn incoming_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
     #[cfg(not(debug_assertions))]
     let ip = Ipv4Addr::UNSPECIFIED;
 
@@ -68,9 +130,10 @@ async fn incoming_connections(connect_pool: Arc<ConnectionPool>) -> Result<()> {
     let listener = TcpListener::bind(&socket).await?;
 
     while let Ok((inbound, _)) = listener.accept().await {
-        let cp_clone = Arc::clone(&connect_pool);
+        let cp_cp = Arc::clone(&connect_pool);
+        let node_cp = Arc::clone(&node);
 
-        let fut = process_connection(inbound, cp_clone);
+        let fut = process_connection(inbound, node_cp, cp_cp);
 
         if let Err(e) = tokio::spawn(async move { fut.await }).await? {
             println!("Error processing connection: {}", e);
@@ -86,6 +149,7 @@ async fn incoming_connections(connect_pool: Arc<ConnectionPool>) -> Result<()> {
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
 async fn process_connection(
     mut stream: TcpStream,
+    node: Arc<Node>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     // Get the actual ID of the Connection from the stream
@@ -93,6 +157,10 @@ async fn process_connection(
         Some(i) => i,
         _ => return Err(Error::msg("Error getting initial ID Message")),
     };
+
+    // Send back initial ID
+    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id));
+    send_message(&mut stream, send_mess).await?;
 
     let conn = Connection::new(stream);
     connect_pool.add(conn, id).await;
@@ -113,13 +181,18 @@ async fn initial_stream_handler(stream: &mut TcpStream) -> Option<u128> {
 }
 
 /// Goes through each [`Connection`] and checks to see if they contain a [`NetworkMessage`]
-async fn check_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+async fn check_connections(
+    node: Arc<Node>,
+    connect_pool: Arc<ConnectionPool>,
+    sync: Arc<JobSync>,
+) -> Result<()> {
     let conns = connect_pool.map.read().await;
 
     for (_, conn) in conns.iter() {
         let stream_lock = conn.get_tcp();
 
         let node_cp = Arc::clone(&node);
+        let sync_cp = Arc::clone(&sync);
 
         task::spawn(async move {
             let mut stream = stream_lock.write().await;
@@ -136,7 +209,7 @@ async fn check_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -
                         .map_err(|_| Error::msg("Error with stream"))
                         .unwrap();
 
-                state_machine(node_cp, message).await.unwrap();
+                recv_state_machine(node_cp, sync_cp, message).await.unwrap();
             }
             // if not, move on
         });
@@ -149,25 +222,55 @@ async fn check_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -
 /// Listens to each [`Connection`] and consumes any messages from the associated [`TcpStream`].
 /// This message is then dealt with. Each [`NetworkMessage`] is processed using a state machine
 /// structure, which is best suited to the unpredictable nature of the incoming messages.
-async fn state_machine(node: Arc<Node>, message: NetworkMessage) -> Result<()> {
-    match message.data {
-        MessageData::Event(e) => {
+async fn recv_state_machine(
+    node: Arc<Node>,
+    sync: Arc<JobSync>,
+    message: NetworkMessage,
+) -> Result<()> {
+    match message.data.clone() {
+        MessageData::Event(_) => {
             // Pass onto other connections (prioritise miners)
-            Ok(())
+            let process_message: ProcessMessage = ProcessMessage::SendMessage(message);
+            match sync.sender.send(process_message).await {
+                Ok(_) => {
+                    sync.new_permit();
+                    Ok(())
+                }
+                _ => Err(Error::msg("Error writing to pipeline")),
+            }
         }
         MessageData::Block(b) => {
             // Check if alreday in Blockchain
             // If not in blockchain (and is valid),
-            // add to blockchain
-            // pass onto other connected nodes
+            if !node.in_chain(&b).await {
+                // add to blockchain
+                node.add_block(b.clone()).await?;
+                // pass onto other connected nodes
+                let message: NetworkMessage = NetworkMessage::new(MessageData::Block(b.clone()));
+                let process_message: ProcessMessage = ProcessMessage::SendMessage(message);
+                match sync.sender.send(process_message).await {
+                    Ok(_) => {
+                        sync.new_permit();
+                        Ok(())
+                    }
+                    _ => Err(Error::msg("Error writing to pipeline")),
+                }?;
+            }
             // Ignore if already in blockchain
+
             Ok(())
         }
         MessageData::State(bc) => {
             // Check if valid
-            // If valid, check if it is a subchain of current blockchain
-            //     If shorter, ignore
-            //     If longer and contains more than half of original chain, replace
+            if bc.validate_chain().is_ok() {
+                // If valid, check if it is a subchain of current blockchain
+                if bc.len() > node.bc_len().await && node.chain_overlap(&bc).await > 0.5 {
+                    // If longer and contains more than half of original chain, replace
+                    let mut bc_unlocked = node.blockchain.write().await;
+                    *bc_unlocked = bc;
+                }
+                // If shorter, ignore
+            }
             // If not valid, ignore
             Ok(())
         }
@@ -179,14 +282,34 @@ async fn state_machine(node: Arc<Node>, message: NetworkMessage) -> Result<()> {
 ///
 /// Consumes data from pipeline which instructs it to perform certain actions. This could be to
 /// try and create a connection with another member of the network via a [`TcpStream`].
-async fn outgoing_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
-    // Read pipeline for new messages
-    // When new message comes through pipeline
-    //     Take message
-    //     Process message by reading using match to determine what to do
-    //     take action based on message
-    // loop
-    Ok(())
+async fn outgoing_connections(
+    node: Arc<Node>,
+    connect_pool: Arc<ConnectionPool>,
+    sync: Arc<JobSync>,
+) -> Result<()> {
+    loop {
+        // Wait until there is something in the pipeline
+        sync.claim_permit();
+        // Read pipeline for new messages
+        let mut rx = sync.receiver.write().await;
+        // When new message comes through pipeline
+        if let Some(m) = rx.recv().await {
+            // Take message
+            // Process message by reading using match to determine what to do
+            // take action based on message
+            match m {
+                ProcessMessage::SendMessage(net_mess) => {
+                    send_all(net_mess, Arc::clone(&connect_pool)).await
+                }
+                ProcessMessage::NewConnection(addr) => {
+                    create_connection(Arc::clone(&node), addr, Arc::clone(&connect_pool)).await
+                }
+                _ => unreachable!(),
+            }?
+        }
+
+        return Ok(());
+    }
 }
 
 /// Sends a new message to a [`Connection`] in [`ConnectionPool`]
@@ -196,5 +319,40 @@ async fn outgoing_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>
 async fn send_message(stream: &mut TcpStream, message: NetworkMessage) -> Result<()> {
     let bytes_message = message.as_bytes();
     stream.write_all(&bytes_message).await?;
+    Ok(())
+}
+
+/// Takes in [`NetworkMessage`] and sends it to all intended recipients
+///
+/// Gets a [`NetworkMessage`] and either floods all connections with the message
+/// that is being sent, or will send it to all connected nodes
+async fn send_all(message: NetworkMessage, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+    let conn_map = connect_pool.map.read().await;
+    for (_, conn) in conn_map.iter() {
+        let tcp = conn.get_tcp();
+        let mut stream = tcp.write().await;
+        send_message(stream.deref_mut(), message.clone()).await?;
+    }
+    Ok(())
+}
+
+/// Given an address and port, creates connection with new node
+///
+/// Function is passed an address and a port and it will attempt to
+/// create a TCP connection with the node at that address
+async fn create_connection(
+    node: Arc<Node>,
+    address: String,
+    connect_pool: Arc<ConnectionPool>,
+) -> Result<()> {
+    // Open connection
+    let mut stream: TcpStream = TcpStream::connect(address).await?;
+    // Send initial message with ID
+    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id));
+    send_message(&mut stream, send_mess).await?;
+    // Recv initial message with ID
+    let id: u128 = 0;
+    // Add to map
+    connect_pool.add(Connection::new(stream), id).await;
     Ok(())
 }
