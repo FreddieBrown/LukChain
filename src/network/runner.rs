@@ -8,6 +8,7 @@ use crate::network::{
 
 use crate::blockchain::Block;
 
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::DerefMut;
 use std::sync::{
@@ -27,6 +28,7 @@ use tracing::{debug, error, info};
 
 /// Synchronisation struct to maintain the job queue
 pub struct JobSync {
+    nonce_set: RwLock<HashSet<u128>>,
     permits: AtomicUsize,
     notify: Notify,
     sender: Sender<ProcessMessage>,
@@ -38,6 +40,7 @@ impl JobSync {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel::<ProcessMessage>(1000);
         Self {
+            nonce_set: RwLock::new(HashSet::new()),
             permits: AtomicUsize::new(0),
             notify: Notify::new(),
             sender: tx,
@@ -203,39 +206,40 @@ async fn check_connections(
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
 ) -> Result<()> {
-    debug!("Checking connections in ConnectionPool");
+    loop {
+        debug!("Checking connections in ConnectionPool");
 
-    let conns = connect_pool.map.read().await;
+        let conns = connect_pool.map.read().await;
 
-    for (_, conn) in conns.iter() {
-        let stream_lock = conn.get_tcp();
+        for (_, conn) in conns.iter() {
+            let stream_lock = conn.get_tcp();
 
-        let node_cp = Arc::clone(&node);
-        let sync_cp = Arc::clone(&sync);
+            let node_cp = Arc::clone(&node);
+            let sync_cp = Arc::clone(&sync);
 
-        task::spawn(async move {
-            let mut stream = stream_lock.write().await;
-            let mut buffer = [0_u8; 4096];
+            task::spawn(async move {
+                let mut stream = stream_lock.write().await;
+                let mut buffer = [0_u8; 4096];
 
-            // Check to see if connection has a message
-            let peeked = stream.peek(&mut buffer).await.unwrap();
+                // Check to see if connection has a message
+                let peeked = stream.peek(&mut buffer).await.unwrap();
 
-            // If it does, pass to state machine
-            if peeked > 0 {
-                let message: NetworkMessage =
-                    NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
-                        .await
-                        .map_err(|_| Error::msg("Error with stream"))
-                        .unwrap();
+                // If it does, pass to state machine
+                if peeked > 0 {
+                    let message: NetworkMessage =
+                        NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
+                            .await
+                            .map_err(|_| Error::msg("Error with stream"))
+                            .unwrap();
 
-                debug!("New Message: {:?}", &message);
+                    debug!("New Message: {:?}", &message);
 
-                recv_state_machine(node_cp, sync_cp, message).await.unwrap();
-            }
-            // if not, move on
-        });
+                    recv_state_machine(node_cp, sync_cp, message).await.unwrap();
+                }
+                // if not, move on
+            });
+        }
     }
-    Ok(())
 }
 
 /// Deals with incoming messages from each [`Connection`] in the [`ConnectionPool`]
@@ -256,8 +260,12 @@ async fn recv_state_machine(
                     debug!("Recv Event: {:?}", e);
                     let mut unlocked_events = node.loose_events.write().await;
                     let mut bc_unlocked = node.blockchain.write().await;
+                    let mut ns_unlocked = sync.nonce_set.write().await;
                     // Check if event is already in loose_events and not in blockchain
-                    if !unlocked_events.contains(&e) && !bc_unlocked.contains(&e) {
+                    if !ns_unlocked.contains(&e.nonce)
+                        && !unlocked_events.contains(&e)
+                        && !bc_unlocked.contains(&e)
+                    {
                         debug!("Event is new");
                         // If it is not, add to set
                         unlocked_events.push(e.clone());
@@ -270,6 +278,8 @@ async fn recv_state_machine(
                             block.add_events(unlocked_events.clone());
                             bc_unlocked.append(block.clone())?;
                             *unlocked_events = Vec::new();
+                            ns_unlocked.insert(e.nonce);
+                            ns_unlocked.insert(block.nonce);
                             Some(ProcessMessage::SendMessage(NetworkMessage::new(
                                 MessageData::Block(block),
                             )))
@@ -282,7 +292,13 @@ async fn recv_state_machine(
                 }
                 _ => {
                     // Else, pass onto other connections
-                    Some(ProcessMessage::SendMessage(message.clone()))
+                    let mut ns_unlocked = sync.nonce_set.write().await;
+                    if !ns_unlocked.contains(&e.nonce) {
+                        ns_unlocked.insert(e.nonce);
+                        Some(ProcessMessage::SendMessage(message.clone()))
+                    } else {
+                        None
+                    }
                 }
             };
 
