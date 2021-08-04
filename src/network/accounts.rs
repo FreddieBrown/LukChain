@@ -2,6 +2,9 @@
 
 use crate::blockchain::{Data, Event};
 
+use std::str::FromStr;
+
+use anyhow::{Error, Result};
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 use tracing::debug;
@@ -76,5 +79,18 @@ impl Account {
         self.priv_key
             .encrypt(&mut rng, padding, &data)
             .expect("failed to encrypt")
+    }
+}
+
+impl FromStr for Role {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let lower = s.to_lowercase();
+        match &lower[..] {
+            "miner" => Ok(Role::Miner),
+            "user" => Ok(Role::User),
+            _ => Err(Error::msg("Error in FromStr in Role")),
+        }
     }
 }

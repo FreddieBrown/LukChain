@@ -48,6 +48,7 @@ impl JobSync {
         debug!("Creating new permit");
 
         self.permits.fetch_add(1, Ordering::SeqCst);
+        debug!("Notifing");
         self.notify.notify_one();
     }
 
@@ -55,15 +56,19 @@ impl JobSync {
     ///
     /// Claims a permit if one exists, if no permits exist, it will
     /// wait until a permit is available.
-    pub fn claim_permit(&self) {
+    pub async fn claim_permit(&self) {
         debug!("Claiming permit");
         let permits: usize = self.permits.load(Ordering::SeqCst);
         if permits == 0 {
-            debug!("Waiting for permit");
-            self.notify.notified();
+            debug!("No available permits, Waiting for permit");
+            self.notify.notified().await;
+            debug!("Permit now available");
         }
         self.permits.fetch_sub(1, Ordering::SeqCst);
-        debug!("Claimed permit");
+        debug!(
+            "Claimed permit. Permits left: {}",
+            self.permits.load(Ordering::SeqCst)
+        );
     }
 }
 
@@ -308,7 +313,7 @@ async fn outgoing_connections(
 ) -> Result<()> {
     loop {
         // Wait until there is something in the pipeline
-        sync.claim_permit();
+        sync.claim_permit().await;
         // Read pipeline for new messages
         let mut rx = sync.receiver.write().await;
         // When new message comes through pipeline
@@ -327,8 +332,6 @@ async fn outgoing_connections(
                 _ => unreachable!(),
             }?
         }
-
-        return Ok(());
     }
 }
 
