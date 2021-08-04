@@ -6,6 +6,8 @@ use crate::network::{
     nodes::Node,
 };
 
+use crate::blockchain::Block;
+
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::DerefMut;
 use std::sync::{
@@ -166,7 +168,7 @@ async fn process_connection(
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     // Get the actual ID of the Connection from the stream
-    let id: u128 = match initial_stream_handler(&mut stream).await {
+    let (id, role) = match initial_stream_handler(&mut stream).await {
         Some(i) => i,
         _ => return Err(Error::msg("Error getting initial ID Message")),
     };
@@ -174,21 +176,21 @@ async fn process_connection(
     debug!("ID of new connection: {}", id);
 
     // Send back initial ID
-    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id));
+    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id, node.account.role));
     send_message(&mut stream, send_mess).await?;
 
-    let conn = Connection::new(stream);
+    let conn = Connection::new(stream, role);
     connect_pool.add(conn, id).await;
 
     Ok(())
 }
 
 /// Finds the [`MessageData::InitialID`] in a [`TcpStream`]
-async fn initial_stream_handler(stream: &mut TcpStream) -> Option<u128> {
+async fn initial_stream_handler(stream: &mut TcpStream) -> Option<(u128, Role)> {
     let mut buffer = [0_u8; 4096];
     match NetworkMessage::from_stream(stream, &mut buffer).await {
         Ok(m) => match m.data {
-            MessageData::InitialID(id) => Some(id),
+            MessageData::InitialID(id, role) => Some((id, role)),
             _ => None,
         },
         _ => None,
@@ -246,17 +248,55 @@ async fn recv_state_machine(
     sync: Arc<JobSync>,
     message: NetworkMessage,
 ) -> Result<()> {
-    match message.data.clone() {
-        MessageData::Event(_) => {
-            // Pass onto other connections (prioritise miners)
-            let process_message: ProcessMessage = ProcessMessage::SendMessage(message);
-            match sync.sender.send(process_message).await {
-                Ok(_) => {
-                    debug!("Added new ProcessMessage to Pipe");
-                    sync.new_permit();
-                    Ok(())
+    match &message.data {
+        MessageData::Event(e) => {
+            // If miner, add it to list of events to build Block
+            let pm = match node.account.role {
+                Role::Miner => {
+                    debug!("Recv Event: {:?}", e);
+                    let mut unlocked_events = node.loose_events.write().await;
+                    // Check if event is already in loose_events
+                    if !unlocked_events.contains(&e) {
+                        debug!("Event is new");
+                        // If it is not, add to set
+                        unlocked_events.push(e.clone());
+                        // if Vec over threshold size, build block and empty loose_events
+                        // TODO: Abstract out threshold size
+                        if unlocked_events.len() > 100 {
+                            debug!("Building new block");
+                            let mut bc_unlocked = node.blockchain.write().await;
+                            let last_hash = bc_unlocked.last_hash();
+                            let mut block: Block = Block::new(last_hash);
+                            block.add_events(unlocked_events.clone());
+                            bc_unlocked.append(block.clone())?;
+                            *unlocked_events = Vec::new();
+                            Some(ProcessMessage::SendMessage(NetworkMessage::new(
+                                MessageData::Block(block),
+                            )))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
-                _ => Err(Error::msg("Error writing to pipeline")),
+                _ => {
+                    // Else, pass onto other connections
+                    Some(ProcessMessage::SendMessage(message.clone()))
+                }
+            };
+
+            if let Some(m) = pm {
+                match sync.sender.send(m).await {
+                    Ok(_) => {
+                        debug!("Added new ProcessMessage to Pipe");
+                        sync.new_permit();
+                        Ok(())
+                    }
+                    _ => Err(Error::msg("Error writing to pipeline")),
+                }
+            } else {
+                Ok(())
             }
         }
         MessageData::Block(b) => {
@@ -291,7 +331,7 @@ async fn recv_state_machine(
                     // If longer and contains more than half of original chain, replace
                     info!("New blockchain received, old Blockchain replaced");
                     let mut bc_unlocked = node.blockchain.write().await;
-                    *bc_unlocked = bc;
+                    *bc_unlocked = bc.clone();
                 }
                 // If shorter, ignore
             }
@@ -376,12 +416,18 @@ async fn create_connection(
     debug!("Creating Connection with: {}", address);
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
+
     // Send initial message with ID
-    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id));
+    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id, node.account.role));
     send_message(&mut stream, send_mess).await?;
+
     // Recv initial message with ID
-    let id: u128 = 0;
+    let (id, role) = match initial_stream_handler(&mut stream).await {
+        Some(i) => i,
+        _ => return Err(Error::msg("Error getting initial ID Message")),
+    };
+
     // Add to map
-    connect_pool.add(Connection::new(stream), id).await;
+    connect_pool.add(Connection::new(stream, role), id).await;
     Ok(())
 }

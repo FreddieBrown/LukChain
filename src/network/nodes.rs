@@ -1,16 +1,16 @@
 //! Node structure containing all information for application
+use crate::blockchain::{Block, BlockChain, Event};
+use crate::network::accounts::{Account, Role};
 
 use anyhow::Result;
 use tokio::sync::RwLock;
-
-use crate::blockchain::{Block, BlockChain};
-use crate::network::accounts::{Account, Role};
 
 /// Struct to contain all information about `Node`
 #[derive(Debug)]
 pub struct Node {
     pub account: Account,
     pub blockchain: RwLock<BlockChain>,
+    pub loose_events: RwLock<Vec<Event>>,
 }
 
 impl Node {
@@ -18,6 +18,7 @@ impl Node {
         Self {
             account: Account::new(role),
             blockchain: RwLock::new(BlockChain::new()),
+            loose_events: RwLock::new(Vec::new()),
         }
     }
 

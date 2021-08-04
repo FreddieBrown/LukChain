@@ -7,6 +7,7 @@ use std::str::FromStr;
 use anyhow::{Error, Result};
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -17,7 +18,7 @@ pub struct Account {
     pub(crate) priv_key: RsaPrivateKey,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy, Deserialize, Serialize)]
 pub enum Role {
     User,
     Miner,

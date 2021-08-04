@@ -158,6 +158,10 @@ impl Block {
         }
     }
 
+    pub fn add_events(&mut self, events: Vec<Event>) {
+        self.events = events;
+    }
+
     /// Sets the nonce of the `Block`
     pub fn set_nonce(&mut self, nonce: u128) {
         self.nonce = nonce;

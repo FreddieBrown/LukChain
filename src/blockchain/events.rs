@@ -1,6 +1,5 @@
 //! Defining base element in the blockchain
 
-use std::cmp::PartialEq;
 use std::time::{Duration, SystemTime};
 
 use crypto::digest::Digest;
@@ -9,7 +8,7 @@ use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Event {
     pub made_by: u128,
     pub data: Data,
@@ -18,7 +17,7 @@ pub struct Event {
     pub created_at: Duration,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Data {
     // Need to encrypt data in message using target public key
     IndividualMessage(u128, Vec<u8>),
