@@ -21,6 +21,7 @@ use tokio::sync::{
     Notify, RwLock,
 };
 use tokio::task;
+use tracing::{debug, error, info};
 
 /// Synchronisation struct to maintain the job queue
 pub struct JobSync {
@@ -44,6 +45,8 @@ impl JobSync {
 
     /// Adds a new permit to the synchronisation mechanism
     pub fn new_permit(&self) {
+        debug!("Creating new permit");
+
         self.permits.fetch_add(1, Ordering::SeqCst);
         self.notify.notify_one();
     }
@@ -53,11 +56,14 @@ impl JobSync {
     /// Claims a permit if one exists, if no permits exist, it will
     /// wait until a permit is available.
     pub fn claim_permit(&self) {
+        debug!("Claiming permit");
         let permits: usize = self.permits.load(Ordering::SeqCst);
         if permits == 0 {
+            debug!("Waiting for permit");
             self.notify.notified();
         }
         self.permits.fetch_sub(1, Ordering::SeqCst);
+        debug!("Claimed permit");
     }
 }
 
@@ -130,13 +136,15 @@ async fn incoming_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>
     let listener = TcpListener::bind(&socket).await?;
 
     while let Ok((inbound, _)) = listener.accept().await {
+        debug!("New Inbound Connection: {:?}", inbound.peer_addr());
+
         let cp_cp = Arc::clone(&connect_pool);
         let node_cp = Arc::clone(&node);
 
         let fut = process_connection(inbound, node_cp, cp_cp);
 
         if let Err(e) = tokio::spawn(async move { fut.await }).await? {
-            println!("Error processing connection: {}", e);
+            error!("Error processing connection: {}", e);
         }
     }
 
@@ -157,6 +165,8 @@ async fn process_connection(
         Some(i) => i,
         _ => return Err(Error::msg("Error getting initial ID Message")),
     };
+
+    debug!("ID of new connection: {}", id);
 
     // Send back initial ID
     let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id));
@@ -186,6 +196,8 @@ async fn check_connections(
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
 ) -> Result<()> {
+    debug!("Checking connections in ConnectionPool");
+
     let conns = connect_pool.map.read().await;
 
     for (_, conn) in conns.iter() {
@@ -208,6 +220,8 @@ async fn check_connections(
                         .await
                         .map_err(|_| Error::msg("Error with stream"))
                         .unwrap();
+
+                debug!("New Message: {:?}", &message);
 
                 recv_state_machine(node_cp, sync_cp, message).await.unwrap();
             }
@@ -233,6 +247,7 @@ async fn recv_state_machine(
             let process_message: ProcessMessage = ProcessMessage::SendMessage(message);
             match sync.sender.send(process_message).await {
                 Ok(_) => {
+                    debug!("Added new ProcessMessage to Pipe");
                     sync.new_permit();
                     Ok(())
                 }
@@ -250,6 +265,7 @@ async fn recv_state_machine(
                 let process_message: ProcessMessage = ProcessMessage::SendMessage(message);
                 match sync.sender.send(process_message).await {
                     Ok(_) => {
+                        debug!("Added new ProcessMessage to Pipe");
                         sync.new_permit();
                         Ok(())
                     }
@@ -261,11 +277,14 @@ async fn recv_state_machine(
             Ok(())
         }
         MessageData::State(bc) => {
+            debug!("New blockchain received");
             // Check if valid
             if bc.validate_chain().is_ok() {
+                debug!("New blockchain is valid");
                 // If valid, check if it is a subchain of current blockchain
                 if bc.len() > node.bc_len().await && node.chain_overlap(&bc).await > 0.5 {
                     // If longer and contains more than half of original chain, replace
+                    info!("New blockchain received, old Blockchain replaced");
                     let mut bc_unlocked = node.blockchain.write().await;
                     *bc_unlocked = bc;
                 }
@@ -294,6 +313,7 @@ async fn outgoing_connections(
         let mut rx = sync.receiver.write().await;
         // When new message comes through pipeline
         if let Some(m) = rx.recv().await {
+            debug!("Received message from pipeline: {:?}", &m);
             // Take message
             // Process message by reading using match to determine what to do
             // take action based on message
@@ -317,6 +337,7 @@ async fn outgoing_connections(
 /// Takes in a new [`NetworkMessage`] and distributes it to a [`Connection`] in the
 /// [`ConnectionPool`] so they are aware of the information which is bein spread.
 async fn send_message(stream: &mut TcpStream, message: NetworkMessage) -> Result<()> {
+    debug!("Sending Message: {:?}", &message);
     let bytes_message = message.as_bytes();
     stream.write_all(&bytes_message).await?;
     Ok(())
@@ -327,10 +348,14 @@ async fn send_message(stream: &mut TcpStream, message: NetworkMessage) -> Result
 /// Gets a [`NetworkMessage`] and either floods all connections with the message
 /// that is being sent, or will send it to all connected nodes
 async fn send_all(message: NetworkMessage, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+    debug!("Sending message to all connected participants");
     let conn_map = connect_pool.map.read().await;
     for (_, conn) in conn_map.iter() {
         let tcp = conn.get_tcp();
         let mut stream = tcp.write().await;
+
+        debug!("Sending message to: {:?}", stream.peer_addr());
+
         send_message(stream.deref_mut(), message.clone()).await?;
     }
     Ok(())
@@ -345,6 +370,7 @@ async fn create_connection(
     address: String,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
+    debug!("Creating Connection with: {}", address);
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
     // Send initial message with ID

@@ -5,21 +5,24 @@ mod events;
 #[cfg(test)]
 mod tests;
 
+pub use self::events::{Data, Event};
+
+use std::cmp::PartialEq;
+use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
+
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
-use std::cmp::PartialEq;
-use std::collections::HashMap;
-
-pub use self::events::{Data, Event};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BlockChain {
     pub chain: Vec<Block>,
     pub users: HashMap<u128, RsaPublicKey>,
+    pub created_at: Duration,
     pending_events: Vec<Event>,
 }
 
@@ -29,6 +32,7 @@ pub struct Block {
     pub prev_hash: Option<String>,
     pub hash: Option<String>,
     pub nonce: u128,
+    pub created_at: Duration,
 }
 
 impl BlockChain {
@@ -37,6 +41,9 @@ impl BlockChain {
         Self {
             chain: Vec::new(),
             users: HashMap::new(),
+            created_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap(),
             pending_events: Vec::new(),
         }
     }
@@ -145,6 +152,9 @@ impl Block {
             prev_hash,
             hash: None,
             nonce: rng.gen(),
+            created_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap(),
         }
     }
 

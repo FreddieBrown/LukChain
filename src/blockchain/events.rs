@@ -1,11 +1,12 @@
 //! Defining base element in the blockchain
 
+use std::cmp::PartialEq;
+use std::time::{Duration, SystemTime};
+
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
-use std::cmp::PartialEq;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -14,6 +15,7 @@ pub struct Event {
     pub data: Data,
     pub nonce: u128,
     pub signature: Option<Vec<u8>>,
+    pub created_at: Duration,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -33,6 +35,9 @@ impl Event {
             data,
             nonce: rng.gen(),
             signature: None,
+            created_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap(),
         }
     }
 
