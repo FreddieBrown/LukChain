@@ -1,5 +1,6 @@
 //! Node structure containing all information for application
 use crate::blockchain::{Block, BlockChain, Event};
+use crate::config::Profile;
 use crate::network::accounts::{Account, Role};
 
 use anyhow::Result;
@@ -14,9 +15,9 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(role: Role) -> Self {
+    pub fn new(role: Role, profile: Profile) -> Self {
         Self {
-            account: Account::new(role),
+            account: Account::new(role, profile),
             blockchain: RwLock::new(BlockChain::new()),
             loose_events: RwLock::new(Vec::new()),
         }

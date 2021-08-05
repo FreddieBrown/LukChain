@@ -1,3 +1,5 @@
+use crate::blockchain::{Block, Data};
+use crate::config::Profile;
 ///! Runner functions for participating in network
 use crate::network::{
     accounts::Role,
@@ -5,8 +7,6 @@ use crate::network::{
     messages::{MessageData, NetworkMessage, ProcessMessage},
     nodes::Node,
 };
-
-use crate::blockchain::{Block, Data};
 
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -77,8 +77,8 @@ impl JobSync {
     }
 }
 
-pub async fn run(role: Role) -> Result<()> {
-    let node: Arc<Node> = Arc::new(Node::new(role));
+pub async fn run(role: Role, profile: Profile) -> Result<()> {
+    let node: Arc<Node> = Arc::new(Node::new(role, profile));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
 
     let sync: Arc<JobSync> = Arc::new(JobSync::new());

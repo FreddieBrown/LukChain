@@ -1,6 +1,7 @@
 //! Information about the participant needed for network participation
 
 use crate::blockchain::{Data, Event};
+use crate::config::Profile;
 
 use std::str::FromStr;
 
@@ -14,6 +15,7 @@ use tracing::debug;
 pub struct Account {
     pub id: u128,
     pub role: Role,
+    pub block_size: usize,
     pub pub_key: RsaPublicKey,
     pub(crate) priv_key: RsaPrivateKey,
 }
@@ -25,16 +27,32 @@ pub enum Role {
 }
 
 impl Account {
-    pub fn new(role: Role) -> Self {
+    pub fn new(role: Role, profile: Profile) -> Self {
         let mut rng = rand::thread_rng();
-        let priv_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate a key");
-        let pub_key = RsaPublicKey::from(&priv_key);
+        let pub_key: RsaPublicKey;
+        let priv_key: RsaPrivateKey;
+
+        let (pub_key, priv_key): (RsaPublicKey, RsaPrivateKey) =
+            if profile.pub_key.is_some() && profile.priv_key.is_some() {
+                (profile.pub_key.unwrap(), profile.priv_key.unwrap())
+            } else {
+                priv_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate a key");
+                pub_key = RsaPublicKey::from(&priv_key);
+                (pub_key, priv_key)
+            };
+
+        let block_size: usize = if profile.block_size.is_some() {
+            profile.block_size.unwrap()
+        } else {
+            10
+        };
 
         debug!("Generated RSA Pair");
 
         Self {
             id: rng.gen(),
             role,
+            block_size,
             pub_key,
             priv_key,
         }

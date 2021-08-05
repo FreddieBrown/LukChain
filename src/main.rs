@@ -1,6 +1,9 @@
+use blockchat::config::{Config, Profile};
 use blockchat::network::{run, Role};
 
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::prelude::*;
 
 use pico_args::Arguments;
 use tracing::info;
@@ -30,6 +33,7 @@ FLAGS:
 OPTIONS:
   --log LEVEL          Sets logging level
   --role ROLE          Sets the role of the user in the network
+  --config NUMBER      Sets chosen config (default: 0)
 ARGS:
   <INPUT>
 ";
@@ -38,6 +42,7 @@ ARGS:
 struct AppArgs {
     log_level: Option<log::Level>,
     role: Option<Role>,
+    config: Option<usize>,
 }
 
 /// main program function
@@ -54,11 +59,10 @@ async fn main() {
     let args = AppArgs {
         // Parses a required value that implements `FromStr`.
         // Returns an error if not present.
-        log_level: pargs
-            .opt_value_from_str("--log")
-            .unwrap_or(Some(log::Level::Info)),
+        log_level: pargs.opt_value_from_str("--log").unwrap(),
         // Parses an optional value that implements `FromStr`.
         role: pargs.opt_value_from_str("--role").unwrap(),
+        config: pargs.opt_value_from_str("--config").unwrap(),
     };
 
     if std::env::var("RUST_LIB_BACKTRACE").is_err() {
@@ -77,9 +81,23 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    if let Some(role) = args.role {
-        info!("Starting up as a ... {:?}", role);
+    // Config in
+    let mut input = String::new();
+    File::open("config.toml")
+        .and_then(|mut f| f.read_to_string(&mut input))
+        .unwrap();
 
-        run(role).await.unwrap();
-    }
+    let decoded: Config = toml::from_str(&input).unwrap();
+
+    let config_size: usize = decoded.profiles.len();
+
+    let chosen_profile: usize = args
+        .config
+        .map_or(0, |c| if c < config_size { c } else { 0 });
+
+    let profile: Profile = decoded.profiles.get(chosen_profile).unwrap().to_owned();
+
+    let chosen_role: Role = args.role.map_or(Role::User, |l| l);
+    info!("Starting up as a ... {:?}", chosen_role);
+    run(chosen_role, profile).await.unwrap();
 }

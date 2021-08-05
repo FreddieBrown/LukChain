@@ -2,7 +2,7 @@ use crate::blockchain::{
     events::{Data, Event},
     Block, BlockChain,
 };
-
+use crate::config::Profile;
 use crate::network::{Account, Role};
 
 // Basic tests
@@ -45,7 +45,14 @@ fn add_block_to_blockchain() {
 // Crypto tests
 #[test]
 fn sign_event_with_key() {
-    let user: Account = Account::new(Role::User);
+    let user: Account = Account::new(
+        Role::User,
+        Profile {
+            pub_key: None,
+            priv_key: None,
+            block_size: None,
+        },
+    );
     let mut event: Event = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
     user.sign_event(&mut event);
     assert!(event.verify_sign(&user.pub_key));
@@ -53,8 +60,22 @@ fn sign_event_with_key() {
 
 #[test]
 fn sign_message_with_wrong_key() {
-    let user: Account = Account::new(Role::User);
-    let user1: Account = Account::new(Role::User);
+    let user: Account = Account::new(
+        Role::User,
+        Profile {
+            pub_key: None,
+            priv_key: None,
+            block_size: None,
+        },
+    );
+    let user1: Account = Account::new(
+        Role::User,
+        Profile {
+            pub_key: None,
+            priv_key: None,
+            block_size: None,
+        },
+    );
     let mut event: Event = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
     user1.sign_event(&mut event);
     assert!(!event.verify_sign(&user.pub_key));
