@@ -399,45 +399,44 @@ async fn outgoing_connections(
 
                 unsent_q.remove(i);
             }
-        } else {
-            // Wait until there is something in the pipeline
-            sync.claim_permit().await;
+        }
+        // Wait until there is something in the pipeline
+        sync.claim_permit().await;
 
-            let num_conns: usize = async {
-                let unlocked_map = connect_pool.map.read().await;
-                unlocked_map.len()
-            }
-            .await;
+        let num_conns: usize = async {
+            let unlocked_map = connect_pool.map.read().await;
+            unlocked_map.len()
+        }
+        .await;
 
-            // Read pipeline for new messages
-            let mut rx = sync.receiver.write().await;
-            // When new message comes through pipeline
-            if let Some(m) = rx.recv().await {
-                debug!("Received message from pipeline: {:?}", &m);
-                // Take message
-                // Process message by reading using match to determine what to do
-                // take action based on message
+        // Read pipeline for new messages
+        let mut rx = sync.receiver.write().await;
+        // When new message comes through pipeline
+        if let Some(m) = rx.recv().await {
+            debug!("Received message from pipeline: {:?}", &m);
+            // Take message
+            // Process message by reading using match to determine what to do
+            // take action based on message
 
-                match &m {
-                    ProcessMessage::SendMessage(net_mess) => {
-                        if num_conns == 0 {
-                            debug!("No connections, so adding to unsent queue");
-                            unsent_q.push(m.clone());
-                            continue;
-                        }
-                        send_all(net_mess.clone(), Arc::clone(&connect_pool)).await
+            match &m {
+                ProcessMessage::SendMessage(net_mess) => {
+                    if num_conns == 0 {
+                        debug!("No connections, so adding to unsent queue");
+                        unsent_q.push(m.clone());
+                        continue;
                     }
-                    ProcessMessage::NewConnection(addr) => {
-                        create_connection(
-                            Arc::clone(&node),
-                            String::from(addr),
-                            Arc::clone(&connect_pool),
-                        )
-                        .await
-                    }
-                    _ => unreachable!(),
-                }?
-            }
+                    send_all(net_mess.clone(), Arc::clone(&connect_pool)).await
+                }
+                ProcessMessage::NewConnection(addr) => {
+                    create_connection(
+                        Arc::clone(&node),
+                        String::from(addr),
+                        Arc::clone(&connect_pool),
+                    )
+                    .await
+                }
+                _ => unreachable!(),
+            }?
         }
     }
 }
