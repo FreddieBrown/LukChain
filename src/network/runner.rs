@@ -6,7 +6,7 @@ use crate::network::{
     nodes::Node,
 };
 
-use crate::blockchain::Block;
+use crate::blockchain::{Block, Data};
 
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -171,29 +171,35 @@ async fn process_connection(
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     // Get the actual ID of the Connection from the stream
-    let (id, role) = match initial_stream_handler(&mut stream).await {
-        Some(i) => i,
-        _ => return Err(Error::msg("Error getting initial ID Message")),
+    let (id, pub_key, role) = match initial_stream_handler(&mut stream).await {
+        Some((Data::NewUser { id, pub_key }, role)) => (id, pub_key, role),
+        _ => return Err(Error::msg("Error getting initial data Message")),
     };
 
     debug!("ID of new connection: {}", id);
 
     // Send back initial ID
-    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id, node.account.role));
+    let send_mess = NetworkMessage::new(MessageData::InitialID(
+        Data::NewUser {
+            id: node.account.id,
+            pub_key: node.account.pub_key.clone(),
+        },
+        node.account.role,
+    ));
     send_message(&mut stream, send_mess).await?;
 
-    let conn = Connection::new(stream, role);
+    let conn = Connection::new(stream, role, Some(pub_key));
     connect_pool.add(conn, id).await;
 
     Ok(())
 }
 
 /// Finds the [`MessageData::InitialID`] in a [`TcpStream`]
-async fn initial_stream_handler(stream: &mut TcpStream) -> Option<(u128, Role)> {
+async fn initial_stream_handler(stream: &mut TcpStream) -> Option<(Data, Role)> {
     let mut buffer = [0_u8; 4096];
     match NetworkMessage::from_stream(stream, &mut buffer).await {
         Ok(m) => match m.data {
-            MessageData::InitialID(id, role) => Some((id, role)),
+            MessageData::InitialID(data, role) => Some((data, role)),
             _ => None,
         },
         _ => None,
@@ -367,26 +373,71 @@ async fn outgoing_connections(
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
 ) -> Result<()> {
+    let mut unsent_q: Vec<ProcessMessage> = Vec::new();
     loop {
-        // Wait until there is something in the pipeline
-        sync.claim_permit().await;
-        // Read pipeline for new messages
-        let mut rx = sync.receiver.write().await;
-        // When new message comes through pipeline
-        if let Some(m) = rx.recv().await {
-            debug!("Received message from pipeline: {:?}", &m);
-            // Take message
-            // Process message by reading using match to determine what to do
-            // take action based on message
-            match m {
-                ProcessMessage::SendMessage(net_mess) => {
-                    send_all(net_mess, Arc::clone(&connect_pool)).await
-                }
-                ProcessMessage::NewConnection(addr) => {
-                    create_connection(Arc::clone(&node), addr, Arc::clone(&connect_pool)).await
-                }
-                _ => unreachable!(),
-            }?
+        // Check if there are any jobs in unsent_q
+        if unsent_q.len() > 0 {
+            debug!("Getting ProcessMessage from Queue");
+
+            if let Some((i, ProcessMessage::NewConnection(addr))) = unsent_q
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| matches!(m, ProcessMessage::NewConnection(_)))
+                .take(1)
+                .next()
+            {
+                debug!("Forming connection with: {}", addr);
+
+                create_connection(
+                    Arc::clone(&node),
+                    String::from(addr),
+                    Arc::clone(&connect_pool),
+                )
+                .await?;
+
+                debug!("Removing element: {}", i);
+
+                unsent_q.remove(i);
+            }
+        } else {
+            // Wait until there is something in the pipeline
+            sync.claim_permit().await;
+
+            let num_conns: usize = async {
+                let unlocked_map = connect_pool.map.read().await;
+                unlocked_map.len()
+            }
+            .await;
+
+            // Read pipeline for new messages
+            let mut rx = sync.receiver.write().await;
+            // When new message comes through pipeline
+            if let Some(m) = rx.recv().await {
+                debug!("Received message from pipeline: {:?}", &m);
+                // Take message
+                // Process message by reading using match to determine what to do
+                // take action based on message
+
+                match &m {
+                    ProcessMessage::SendMessage(net_mess) => {
+                        if num_conns == 0 {
+                            debug!("No connections, so adding to unsent queue");
+                            unsent_q.push(m.clone());
+                            continue;
+                        }
+                        send_all(net_mess.clone(), Arc::clone(&connect_pool)).await
+                    }
+                    ProcessMessage::NewConnection(addr) => {
+                        create_connection(
+                            Arc::clone(&node),
+                            String::from(addr),
+                            Arc::clone(&connect_pool),
+                        )
+                        .await
+                    }
+                    _ => unreachable!(),
+                }?
+            }
         }
     }
 }
@@ -434,16 +485,24 @@ async fn create_connection(
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
     // Send initial message with ID
-    let send_mess = NetworkMessage::new(MessageData::InitialID(node.account.id, node.account.role));
+    let send_mess = NetworkMessage::new(MessageData::InitialID(
+        Data::NewUser {
+            id: node.account.id,
+            pub_key: node.account.pub_key.clone(),
+        },
+        node.account.role,
+    ));
     send_message(&mut stream, send_mess).await?;
 
     // Recv initial message with ID
-    let (id, role) = match initial_stream_handler(&mut stream).await {
-        Some(i) => i,
-        _ => return Err(Error::msg("Error getting initial ID Message")),
+    let (id, pub_key, role) = match initial_stream_handler(&mut stream).await {
+        Some((Data::NewUser { id, pub_key }, role)) => (id, pub_key, role),
+        _ => return Err(Error::msg("Error getting initial data Message")),
     };
 
     // Add to map
-    connect_pool.add(Connection::new(stream, role), id).await;
+    connect_pool
+        .add(Connection::new(stream, role, Some(pub_key)), id)
+        .await;
     Ok(())
 }

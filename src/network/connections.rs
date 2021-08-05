@@ -3,6 +3,8 @@ use crate::network::Role;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use rsa::RsaPublicKey;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
@@ -16,6 +18,7 @@ pub struct Connection {
     pub alive: bool,
     pub conn: Arc<RwLock<TcpStream>>,
     pub role: Role,
+    pub pub_key: Option<RsaPublicKey>,
 }
 
 impl ConnectionPool {
@@ -69,11 +72,12 @@ impl ConnectionPool {
 
 impl Connection {
     /// Creates a new [`Connection`] object
-    pub fn new(conn: TcpStream, role: Role) -> Self {
+    pub fn new(conn: TcpStream, role: Role, pub_key: Option<RsaPublicKey>) -> Self {
         Self {
             conn: Arc::new(RwLock::new(conn)),
             alive: true,
             role,
+            pub_key,
         }
     }
 

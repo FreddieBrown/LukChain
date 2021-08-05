@@ -1,5 +1,5 @@
 ///! Functionality for creating sendable messages across network.
-use crate::blockchain::{Block, BlockChain, Event};
+use crate::blockchain::{Block, BlockChain, Data, Event};
 use crate::network::Role;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,6 @@ pub enum MessageData {
     Event(Event),
     Block(Block),
     State(BlockChain),
-    InitialID(u128, Role),
+    InitialID(Data, Role),
     Blank,
 }
