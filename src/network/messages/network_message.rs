@@ -1,6 +1,7 @@
 ///! Functionality for creating sendable messages across network.
 use crate::blockchain::{Block, BlockChain, Data, Event};
 use crate::network::Role;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
@@ -60,9 +61,19 @@ impl NetworkMessage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MessageData {
+    // Blockchain specific Data
     Event(Event),
     Block(Block),
     State(BlockChain),
+    // Connection Configuration
     InitialID(Data, Role),
+    Confirm,
+    // Lookup Table Requests
+    RequestAddress(u128),
+    GeneralAddrRequest,
+    PeerAddresses(Vec<String>),
+    PeerAddress(String),
+    NoAddr,
+    // Default Response
     Blank,
 }

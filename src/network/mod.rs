@@ -2,8 +2,10 @@
 
 mod accounts;
 mod connections;
+mod lookup;
 pub mod messages;
 mod nodes;
+mod participants;
 mod runner;
 
 #[cfg(test)]
@@ -13,5 +15,5 @@ pub use self::{
     accounts::{Account, Role},
     connections::{Connection, ConnectionPool},
     nodes::Node,
-    runner::run,
+    runner::{run, JobSync},
 };

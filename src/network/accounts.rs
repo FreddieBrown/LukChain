@@ -24,6 +24,7 @@ pub struct Account {
 pub enum Role {
     User,
     Miner,
+    LookUp,
 }
 
 impl Account {
@@ -109,6 +110,7 @@ impl FromStr for Role {
         match &lower[..] {
             "miner" => Ok(Role::Miner),
             "user" => Ok(Role::User),
+            "lookup" => Ok(Role::LookUp),
             _ => Err(Error::msg("Error in FromStr in Role")),
         }
     }
