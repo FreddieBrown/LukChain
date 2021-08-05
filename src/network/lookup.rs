@@ -11,6 +11,8 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
 use anyhow::Result;
+use rand::seq::IteratorRandom;
+use rand::thread_rng;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
@@ -91,8 +93,21 @@ async fn process_lookup(
 
 async fn get_connections(addr: String, address_table: AddressTable) -> Vec<String> {
     let unlocked_table = address_table.read().await;
+
+    let mut table_keys = unlocked_table.keys().collect::<Vec<_>>();
+
     // Use filters etc to pick 4 random addresses from table
-    Vec::new()
+    table_keys
+        .iter()
+        .filter(|k| {
+            if let Some(entry) = unlocked_table.get(k) {
+                addr != entry.0
+            } else {
+                false
+            }
+        })
+        .map(|k| unlocked_table.get(k).unwrap().0.clone())
+        .choose_multiple(&mut thread_rng(), 4)
 }
 
 async fn get_connection(id: u128, address_table: AddressTable) -> MessageData {
