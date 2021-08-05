@@ -13,6 +13,7 @@ fn account_sign_event() {
             pub_key: None,
             priv_key: None,
             block_size: None,
+            lookup_address: None,
         },
     );
     let event: Event = user.new_event(Data::GroupMessage(String::from("Hello")));

@@ -91,6 +91,7 @@ async fn process_lookup(
 
 async fn get_connections(addr: String, address_table: AddressTable) -> Vec<String> {
     let unlocked_table = address_table.read().await;
+    // Use filters etc to pick 4 random addresses from table
     Vec::new()
 }
 

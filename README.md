@@ -2,6 +2,8 @@
 
 Blockchain based chat application
 
+Currently uses `nightly` features
+
 ## Command Line Interface
 
 ```

@@ -1,4 +1,4 @@
-use crate::blockchain::{Block, Data};
+use crate::blockchain::{Block, Data, Event};
 use crate::network::{
     accounts::Role,
     connections::{Connection, ConnectionPool},
@@ -265,6 +265,14 @@ async fn recv_state_machine(
             if !node.in_chain(&b).await {
                 // add to blockchain
                 node.add_block(b.clone()).await?;
+                // TODO: Go through loose events and remove any which are in block
+                let mut unlocked_loose = node.loose_events.write().await;
+                let dropped = unlocked_loose
+                    .drain_filter(|x| b.events.contains(x))
+                    .collect::<Vec<Event>>();
+
+                debug!("Events found to be in block: {:?}", dropped);
+
                 // pass onto other connected nodes
                 let message: NetworkMessage = NetworkMessage::new(MessageData::Block(b.clone()));
                 let process_message: ProcessMessage = ProcessMessage::SendMessage(message);

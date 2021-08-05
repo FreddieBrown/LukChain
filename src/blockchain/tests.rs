@@ -51,6 +51,7 @@ fn sign_event_with_key() {
             pub_key: None,
             priv_key: None,
             block_size: None,
+            lookup_address: None,
         },
     );
     let mut event: Event = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
@@ -66,6 +67,7 @@ fn sign_message_with_wrong_key() {
             pub_key: None,
             priv_key: None,
             block_size: None,
+            lookup_address: None,
         },
     );
     let user1: Account = Account::new(
@@ -74,6 +76,7 @@ fn sign_message_with_wrong_key() {
             pub_key: None,
             priv_key: None,
             block_size: None,
+            lookup_address: None,
         },
     );
     let mut event: Event = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
