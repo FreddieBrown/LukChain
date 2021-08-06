@@ -32,9 +32,6 @@ pub async fn run(
     #[cfg(debug_assertions)]
     let ip = Ipv4Addr::LOCALHOST;
 
-    // Temporary solution
-    let port: u16 = 0;
-
     // Open socket and start listening
     let listener = TcpListener::bind(&SocketAddr::V4(SocketAddrV4::new(ip, 0))).await?;
 
@@ -74,7 +71,12 @@ pub async fn run(
         .unwrap()
     });
 
-    join!(inbound_fut, outgoing_fut);
+    match join!(inbound_fut, outgoing_fut) {
+        (Ok(_), Err(e)) => error!("Error in futures: {}", e),
+        (Err(e), Ok(_)) => error!("Error in futures: {}", e),
+        (Err(e1), Err(e2)) => error!("Multiple Errors in futures: {} and {}", e1, e2),
+        _ => debug!("All fine!"),
+    };
 
     Ok(())
 }
