@@ -68,7 +68,9 @@ pub enum MessageData {
     // Connection Configuration
     InitialID(Data, Role),
     Confirm,
+    Finish,
     // Lookup Table Requests
+    LookUpReg(u128, String, Role),
     RequestAddress(u128),
     GeneralAddrRequest,
     PeerAddresses(Vec<String>),

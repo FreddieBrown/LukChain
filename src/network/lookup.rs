@@ -1,4 +1,4 @@
-use crate::blockchain::Data;
+///! Module which defines the behaviour of the lookup node
 use crate::network::{
     accounts::Role,
     messages::{MessageData, NetworkMessage},
@@ -6,6 +6,7 @@ use crate::network::{
 };
 
 use std::collections::HashMap;
+use std::net::Shutdown;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
@@ -61,35 +62,41 @@ pub async fn run() -> Result<()> {
 /// Function is given a [`TcpStream`]. It then gets the ID from the
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
 async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> Result<()> {
-    let conn_addr: String = stream.peer_addr()?.to_string();
     let mut buffer = [0_u8; 4096];
-    let recv_message: NetworkMessage =
-        NetworkMessage::from_stream(&mut stream, &mut buffer).await?;
-    // Deal with initial message
-    // Either specific request, or general request
-    let send_mess = NetworkMessage::new(match recv_message.data {
-        MessageData::InitialID(Data::NewUser { id, .. }, role) => {
-            // Deal with data from message
-            let mut unlocked_table = address_table.write().await;
-            // Add node to table
-            unlocked_table.insert(id, (conn_addr, role));
-            MessageData::Confirm
-        }
-        MessageData::RequestAddress(id) => get_connection(id, address_table).await,
-        MessageData::GeneralAddrRequest => {
-            MessageData::PeerAddresses(get_connections(conn_addr, address_table).await)
-        }
-        _ => MessageData::NoAddr,
-    });
+    let mut client_addr = String::new();
 
-    debug!("Sending message: {:?}", &send_mess);
+    loop {
+        let addr_clone = Arc::clone(&address_table);
+        let recv_message: NetworkMessage =
+            NetworkMessage::from_stream(&mut stream, &mut buffer).await?;
+        // Deal with initial message
+        // Either specific request, or general request
 
-    send_message(&mut stream, send_mess).await?;
+        let send_mess = NetworkMessage::new(match recv_message.data {
+            MessageData::LookUpReg(id, addr, role) => {
+                // Deal with data from message
+                let mut unlocked_table = addr_clone.write().await;
+                // Add node to table
+                client_addr = String::from(&addr);
+                unlocked_table.insert(id, (addr, role));
+                MessageData::Confirm
+            }
+            MessageData::RequestAddress(id) => get_connection(id, addr_clone).await,
+            MessageData::GeneralAddrRequest => {
+                MessageData::PeerAddresses(get_connections(&client_addr, addr_clone).await)
+            }
+            MessageData::Finish => break,
+            _ => MessageData::NoAddr,
+        });
+        send_message(&mut stream, send_mess).await?;
+    }
+
+    stream.into_std()?.shutdown(Shutdown::Both)?;
 
     Ok(())
 }
 
-async fn get_connections(addr: String, address_table: AddressTable) -> Vec<String> {
+async fn get_connections(addr: &String, address_table: AddressTable) -> Vec<String> {
     let unlocked_table = address_table.read().await;
 
     // Use filters etc to pick 4 random addresses from table
@@ -97,7 +104,7 @@ async fn get_connections(addr: String, address_table: AddressTable) -> Vec<Strin
         .keys()
         .filter(|k| {
             if let Some(entry) = unlocked_table.get(k) {
-                addr != entry.0
+                addr != &entry.0
             } else {
                 false
             }

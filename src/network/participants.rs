@@ -8,12 +8,12 @@ use crate::network::{
     runner::{send_message, JobSync},
 };
 
-use std::net::Shutdown;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
+use futures::join;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
 use tracing::{debug, error, info};
@@ -33,13 +33,13 @@ pub async fn run(
         };
     }
 
-    let _inbound_fut = inbound(
+    let inbound_fut = inbound(
         Arc::clone(&node),
         Arc::clone(&connect_pool),
         Arc::clone(&sync),
     );
 
-    task::spawn(async move {
+    let outgoing_fut = task::spawn(async move {
         outgoing_connections(
             Arc::clone(&node),
             Arc::clone(&connect_pool),
@@ -47,8 +47,10 @@ pub async fn run(
         )
         .await
         .unwrap()
-    })
-    .await?;
+    });
+
+    join!(inbound_fut, outgoing_fut);
+
     Ok(())
 }
 
@@ -63,11 +65,11 @@ async fn initial_lookup(node: Arc<Node>, sync: Arc<JobSync>, address: String) ->
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
-    let reg_message = NetworkMessage::new(MessageData::InitialID(
-        Data::NewUser {
-            id: node.account.id,
-            pub_key: node.account.pub_key.clone(),
-        },
+    let addr = String::new();
+
+    let reg_message = NetworkMessage::new(MessageData::LookUpReg(
+        node.account.id,
+        addr,
         node.account.role,
     ));
 
@@ -86,10 +88,13 @@ async fn initial_lookup(node: Arc<Node>, sync: Arc<JobSync>, address: String) ->
 
         send_message(&mut stream, gen_req).await?;
 
-        match NetworkMessage::from_stream(&mut stream, &mut buffer)
-            .await?
-            .data
-        {
+        debug!("Sent Message");
+
+        let read_in = NetworkMessage::from_stream(&mut stream, &mut buffer).await?;
+
+        debug!("Read Message");
+
+        match read_in.data {
             MessageData::PeerAddresses(addrs) => {
                 // Iterate over addresses and create connection requests
                 for addr in addrs {
@@ -114,7 +119,9 @@ async fn initial_lookup(node: Arc<Node>, sync: Arc<JobSync>, address: String) ->
         }
     }
 
-    stream.into_std()?.shutdown(Shutdown::Both)?;
+    let finish_message = NetworkMessage::new(MessageData::Finish);
+    send_message(&mut stream, finish_message).await?;
+
     Ok(())
 }
 
@@ -125,11 +132,12 @@ async fn inbound(
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
 ) -> Result<()> {
+    debug!("Starting Inbound");
     // Thread to listen for inbound connections (reactive)
     //     Put all connections into connect pool
     let cp_copy = Arc::clone(&connect_pool);
     let node_copy = Arc::clone(&node);
-    task::spawn(async move { incoming_connections(node_copy, cp_copy).await.unwrap() }).await?;
+    task::spawn(async move { incoming_connections(node_copy, cp_copy).await.unwrap() });
     // Thread to go through all connections and deal with incoming messages (reactive)
     let node_copy = Arc::clone(&node);
     let cp_copy = Arc::clone(&connect_pool);
@@ -150,6 +158,8 @@ async fn inbound(
 /// participants in the network. Takes the connections and inserts them
 /// into the `connect_pool`.
 async fn incoming_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+    debug!("Starting Incoming Connections");
+
     #[cfg(not(debug_assertions))]
     let ip = Ipv4Addr::UNSPECIFIED;
 
@@ -232,9 +242,8 @@ async fn check_connections(
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
 ) -> Result<()> {
+    debug!("Checking connections in ConnectionPool");
     loop {
-        debug!("Checking connections in ConnectionPool");
-
         let conns = connect_pool.map.read().await;
 
         for (_, conn) in conns.iter() {
