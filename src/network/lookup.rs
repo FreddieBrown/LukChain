@@ -1,9 +1,8 @@
-use crate::blockchain::{Block, Data};
+use crate::blockchain::Data;
 use crate::network::{
     accounts::Role,
-    messages::{MessageData, NetworkMessage, ProcessMessage},
-    nodes::Node,
-    runner::{send_message, JobSync},
+    messages::{MessageData, NetworkMessage},
+    runner::send_message,
 };
 
 use std::collections::HashMap;
@@ -24,7 +23,7 @@ pub type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
 /// A lookup server uses a Distributed Hash Table-like functionality to store
 /// addresses of participants in the network, and allows connected network
 /// participants to find nodes to form initial connections with.
-pub async fn run(node: Arc<Node>, sync: Arc<JobSync>) -> Result<()> {
+pub async fn run() -> Result<()> {
     let address_table: AddressTable = Arc::new(RwLock::new(HashMap::new()));
 
     #[cfg(not(debug_assertions))]
@@ -40,13 +39,14 @@ pub async fn run(node: Arc<Node>, sync: Arc<JobSync>) -> Result<()> {
     let socket = SocketAddr::V4(SocketAddrV4::new(ip, port));
     let listener = TcpListener::bind(&socket).await?;
 
+    info!("Running on: {}", &socket);
+
     while let Ok((inbound, _)) = listener.accept().await {
         debug!("New Inbound Connection: {:?}", inbound.peer_addr());
 
-        let node_cp = Arc::clone(&node);
         let at_cp = Arc::clone(&address_table);
 
-        let fut = process_lookup(inbound, node_cp, at_cp);
+        let fut = process_lookup(inbound, at_cp);
 
         if let Err(e) = tokio::spawn(async move { fut.await }).await? {
             error!("Error processing connection: {}", e);
@@ -60,11 +60,7 @@ pub async fn run(node: Arc<Node>, sync: Arc<JobSync>) -> Result<()> {
 ///
 /// Function is given a [`TcpStream`]. It then gets the ID from the
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
-async fn process_lookup(
-    mut stream: TcpStream,
-    node: Arc<Node>,
-    address_table: AddressTable,
-) -> Result<()> {
+async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> Result<()> {
     let conn_addr: String = stream.peer_addr()?.to_string();
     let mut buffer = [0_u8; 4096];
     let recv_message: NetworkMessage =
@@ -86,6 +82,8 @@ async fn process_lookup(
         _ => MessageData::NoAddr,
     });
 
+    debug!("Sending message: {:?}", &send_mess);
+
     send_message(&mut stream, send_mess).await?;
 
     Ok(())
@@ -94,11 +92,9 @@ async fn process_lookup(
 async fn get_connections(addr: String, address_table: AddressTable) -> Vec<String> {
     let unlocked_table = address_table.read().await;
 
-    let mut table_keys = unlocked_table.keys().collect::<Vec<_>>();
-
     // Use filters etc to pick 4 random addresses from table
-    table_keys
-        .iter()
+    unlocked_table
+        .keys()
         .filter(|k| {
             if let Some(entry) = unlocked_table.get(k) {
                 addr != entry.0

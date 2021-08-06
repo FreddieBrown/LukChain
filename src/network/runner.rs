@@ -24,7 +24,7 @@ use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     Notify, RwLock,
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 /// Synchronisation struct to maintain the job queue
 pub struct JobSync {
@@ -78,21 +78,23 @@ impl JobSync {
 }
 
 pub async fn run(role: Role, profile: Profile) -> Result<()> {
-    let node: Arc<Node> = Arc::new(Node::new(role, profile));
-    let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
+    info!("Input Profile: {:?}", &profile);
 
+    let node: Arc<Node> = Arc::new(Node::new(role, profile.clone()));
+    let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
     let sync: Arc<JobSync> = Arc::new(JobSync::new());
 
     match role {
         Role::LookUp => {
             // Start Lookup server functionality
-            lookup::run(Arc::clone(&node), Arc::clone(&sync)).await
+            lookup::run().await
         }
         _ => {
             participants::run(
                 Arc::clone(&node),
                 Arc::clone(&connect_pool),
                 Arc::clone(&sync),
+                profile,
             )
             .await
         }

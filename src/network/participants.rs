@@ -1,4 +1,5 @@
 use crate::blockchain::{Block, Data, Event};
+use crate::config::Profile;
 use crate::network::{
     accounts::Role,
     connections::{Connection, ConnectionPool},
@@ -7,6 +8,7 @@ use crate::network::{
     runner::{send_message, JobSync},
 };
 
+use std::net::Shutdown;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -16,11 +18,18 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
 use tracing::{debug, error, info};
 
+/// Main runner function for participant functionality
 pub async fn run(
     node: Arc<Node>,
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
+    profile: Profile,
 ) -> Result<()> {
+    // Talk to LookUp Server and get initial connections
+    if let Some(addr) = profile.lookup_address {
+        initial_lookup(Arc::clone(&node), Arc::clone(&sync), addr).await?;
+    }
+
     let _inbound_fut = inbound(
         Arc::clone(&node),
         Arc::clone(&connect_pool),
@@ -40,6 +49,72 @@ pub async fn run(
     Ok(())
 }
 
+/// Connects to the lookup server and creates messages to form connections
+///
+/// Node registers itself with the LookUp server and requests connections for
+/// it to make. It then creates a [`ProcessMessage::NewConnection`] for each
+/// address and puts them into the job queue.
+async fn initial_lookup(node: Arc<Node>, sync: Arc<JobSync>, address: String) -> Result<()> {
+    let mut buffer = [0_u8; 4096];
+    debug!("Creating LookUp Connection with: {}", address);
+    // Open connection
+    let mut stream: TcpStream = TcpStream::connect(address).await?;
+
+    let reg_message = NetworkMessage::new(MessageData::InitialID(
+        Data::NewUser {
+            id: node.account.id,
+            pub_key: node.account.pub_key.clone(),
+        },
+        node.account.role,
+    ));
+
+    send_message(&mut stream, reg_message).await?;
+
+    if matches!(
+        NetworkMessage::from_stream(&mut stream, &mut buffer)
+            .await?
+            .data,
+        MessageData::Confirm
+    ) {
+        // Create general request message and send over stream
+        let gen_req = NetworkMessage::new(MessageData::GeneralAddrRequest);
+
+        send_message(&mut stream, gen_req).await?;
+
+        match NetworkMessage::from_stream(&mut stream, &mut buffer)
+            .await?
+            .data
+        {
+            MessageData::PeerAddresses(addrs) => {
+                // Iterate over addresses and create connection requests
+                for addr in addrs {
+                    debug!("Creating Connection Message for: {}", &addr);
+
+                    let process_message = ProcessMessage::NewConnection(addr);
+
+                    match sync.sender.send(process_message).await {
+                        Ok(_) => {
+                            debug!("Added new ProcessMessage to Pipe");
+                            sync.new_permit();
+                            Ok(())
+                        }
+                        _ => Err(Error::msg("Error writing to pipeline")),
+                    }?;
+                }
+            }
+            MessageData::NoAddr => {
+                debug!("No addresses in the lookup table");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    stream.into_std()?.shutdown(Shutdown::Both)?;
+    Ok(())
+}
+
+/// Function to start up functions which deal with inbound
+/// connections and message traffic
 async fn inbound(
     node: Arc<Node>,
     connect_pool: Arc<ConnectionPool>,
@@ -82,6 +157,8 @@ async fn incoming_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>
     // Open socket and start listening
     let socket = SocketAddr::V4(SocketAddrV4::new(ip, port));
     let listener = TcpListener::bind(&socket).await?;
+
+    info!("Participant Address: {}", &socket);
 
     while let Ok((inbound, _)) = listener.accept().await {
         debug!("New Inbound Connection: {:?}", inbound.peer_addr());
