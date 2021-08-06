@@ -25,9 +25,33 @@ pub async fn run(
     sync: Arc<JobSync>,
     profile: Profile,
 ) -> Result<()> {
+    // Incoming Connections IP Address
+    #[cfg(not(debug_assertions))]
+    let ip = Ipv4Addr::UNSPECIFIED;
+
+    #[cfg(debug_assertions)]
+    let ip = Ipv4Addr::LOCALHOST;
+
+    // Temporary solution
+    let port: u16 = 0;
+
+    // Open socket and start listening
+    let listener = TcpListener::bind(&SocketAddr::V4(SocketAddrV4::new(ip, 0))).await?;
+
+    let inbound_addr = listener.local_addr()?;
+
+    info!("Participant Address: {:?}", &inbound_addr);
+
     // Talk to LookUp Server and get initial connections
     if let Some(addr) = profile.lookup_address {
-        match initial_lookup(Arc::clone(&node), Arc::clone(&sync), addr).await {
+        match initial_lookup(
+            Arc::clone(&node),
+            Arc::clone(&sync),
+            addr,
+            inbound_addr.to_string(),
+        )
+        .await
+        {
             Ok(_) => debug!("Initial Lookup Success"),
             Err(e) => error!("Initial Lookup Error: {}", e),
         };
@@ -37,6 +61,7 @@ pub async fn run(
         Arc::clone(&node),
         Arc::clone(&connect_pool),
         Arc::clone(&sync),
+        listener,
     );
 
     let outgoing_fut = task::spawn(async move {
@@ -59,17 +84,20 @@ pub async fn run(
 /// Node registers itself with the LookUp server and requests connections for
 /// it to make. It then creates a [`ProcessMessage::NewConnection`] for each
 /// address and puts them into the job queue.
-async fn initial_lookup(node: Arc<Node>, sync: Arc<JobSync>, address: String) -> Result<()> {
+async fn initial_lookup(
+    node: Arc<Node>,
+    sync: Arc<JobSync>,
+    address: String,
+    own_addr: String,
+) -> Result<()> {
     let mut buffer = [0_u8; 4096];
     debug!("Creating LookUp Connection with: {}", address);
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
-    let addr = String::new();
-
     let reg_message = NetworkMessage::new(MessageData::LookUpReg(
         node.account.id,
-        addr,
+        own_addr,
         node.account.role,
     ));
 
@@ -131,13 +159,17 @@ async fn inbound(
     node: Arc<Node>,
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
+    listener: TcpListener,
 ) -> Result<()> {
-    debug!("Starting Inbound");
     // Thread to listen for inbound connections (reactive)
     //     Put all connections into connect pool
     let cp_copy = Arc::clone(&connect_pool);
     let node_copy = Arc::clone(&node);
-    task::spawn(async move { incoming_connections(node_copy, cp_copy).await.unwrap() });
+    task::spawn(async move {
+        incoming_connections(node_copy, cp_copy, listener)
+            .await
+            .unwrap()
+    });
     // Thread to go through all connections and deal with incoming messages (reactive)
     let node_copy = Arc::clone(&node);
     let cp_copy = Arc::clone(&connect_pool);
@@ -157,24 +189,11 @@ async fn inbound(
 /// Listens to a inbound port and accepts connections coming from other
 /// participants in the network. Takes the connections and inserts them
 /// into the `connect_pool`.
-async fn incoming_connections(node: Arc<Node>, connect_pool: Arc<ConnectionPool>) -> Result<()> {
-    debug!("Starting Incoming Connections");
-
-    #[cfg(not(debug_assertions))]
-    let ip = Ipv4Addr::UNSPECIFIED;
-
-    #[cfg(debug_assertions)]
-    let ip = Ipv4Addr::LOCALHOST;
-
-    // Temporary solution
-    let port: u16 = 8080;
-
-    // Open socket and start listening
-    let socket = SocketAddr::V4(SocketAddrV4::new(ip, port));
-    let listener = TcpListener::bind(&socket).await?;
-
-    info!("Participant Address: {}", &socket);
-
+async fn incoming_connections(
+    node: Arc<Node>,
+    connect_pool: Arc<ConnectionPool>,
+    listener: TcpListener,
+) -> Result<()> {
     while let Ok((inbound, _)) = listener.accept().await {
         debug!("New Inbound Connection: {:?}", inbound.peer_addr());
 

@@ -63,7 +63,7 @@ pub async fn run() -> Result<()> {
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
 async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> Result<()> {
     let mut buffer = [0_u8; 4096];
-    let mut client_addr = String::new();
+    let mut client_id = 0;
 
     loop {
         let addr_clone = Arc::clone(&address_table);
@@ -77,13 +77,15 @@ async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> R
                 // Deal with data from message
                 let mut unlocked_table = addr_clone.write().await;
                 // Add node to table
-                client_addr = String::from(&addr);
+                client_id = id;
+
                 unlocked_table.insert(id, (addr, role));
+                debug!("Address Table: {:?}", &unlocked_table);
                 MessageData::Confirm
             }
             MessageData::RequestAddress(id) => get_connection(id, addr_clone).await,
             MessageData::GeneralAddrRequest => {
-                MessageData::PeerAddresses(get_connections(&client_addr, addr_clone).await)
+                MessageData::PeerAddresses(get_connections(client_id, addr_clone).await)
             }
             MessageData::Finish => break,
             _ => MessageData::NoAddr,
@@ -96,19 +98,13 @@ async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> R
     Ok(())
 }
 
-async fn get_connections(addr: &String, address_table: AddressTable) -> Vec<String> {
+async fn get_connections(id: u128, address_table: AddressTable) -> Vec<String> {
     let unlocked_table = address_table.read().await;
 
     // Use filters etc to pick 4 random addresses from table
     unlocked_table
         .keys()
-        .filter(|k| {
-            if let Some(entry) = unlocked_table.get(k) {
-                addr != &entry.0
-            } else {
-                false
-            }
-        })
+        .filter(|k| *k != &id)
         .map(|k| unlocked_table.get(k).unwrap().0.clone())
         .choose_multiple(&mut thread_rng(), 4)
 }

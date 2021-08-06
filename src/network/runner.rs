@@ -30,6 +30,7 @@ use tracing::{debug, info};
 pub struct JobSync {
     pub nonce_set: RwLock<HashSet<u128>>,
     pub permits: AtomicUsize,
+    pub waiters: AtomicUsize,
     pub notify: Notify,
     pub sender: Sender<ProcessMessage>,
     pub receiver: RwLock<Receiver<ProcessMessage>>,
@@ -42,6 +43,7 @@ impl JobSync {
         Self {
             nonce_set: RwLock::new(HashSet::new()),
             permits: AtomicUsize::new(0),
+            waiters: AtomicUsize::new(0),
             notify: Notify::new(),
             sender: tx,
             receiver: RwLock::new(rx),
@@ -52,9 +54,13 @@ impl JobSync {
     pub fn new_permit(&self) {
         debug!("Creating new permit");
 
+        let waiters: usize = self.waiters.load(Ordering::SeqCst);
         self.permits.fetch_add(1, Ordering::SeqCst);
-        debug!("Notifing");
-        self.notify.notify_one();
+
+        if waiters >= 1 {
+            debug!("Notifing");
+            self.notify.notify_one();
+        }
     }
 
     /// Claims a permit from the group of permits
@@ -65,9 +71,12 @@ impl JobSync {
         debug!("Claiming permit");
         let permits: usize = self.permits.load(Ordering::SeqCst);
         if permits == 0 {
+            self.waiters.fetch_add(1, Ordering::SeqCst);
             debug!("No available permits, Waiting for permit");
             self.notify.notified().await;
-            debug!("Permit now available");
+            let permits: usize = self.permits.load(Ordering::SeqCst);
+            debug!("Permit now available: {}", permits);
+            self.waiters.fetch_sub(1, Ordering::SeqCst);
         }
         self.permits.fetch_sub(1, Ordering::SeqCst);
         debug!(
