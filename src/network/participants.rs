@@ -27,7 +27,10 @@ pub async fn run(
 ) -> Result<()> {
     // Talk to LookUp Server and get initial connections
     if let Some(addr) = profile.lookup_address {
-        initial_lookup(Arc::clone(&node), Arc::clone(&sync), addr).await?;
+        match initial_lookup(Arc::clone(&node), Arc::clone(&sync), addr).await {
+            Ok(_) => debug!("Initial Lookup Success"),
+            Err(e) => error!("Initial Lookup Error: {}", e),
+        };
     }
 
     let _inbound_fut = inbound(
@@ -69,6 +72,8 @@ async fn initial_lookup(node: Arc<Node>, sync: Arc<JobSync>, address: String) ->
     ));
 
     send_message(&mut stream, reg_message).await?;
+
+    debug!("Sent Reg Message");
 
     if matches!(
         NetworkMessage::from_stream(&mut stream, &mut buffer)

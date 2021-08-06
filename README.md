@@ -31,12 +31,13 @@ This should follow the following structure:
 pub_key = ".."
 priv_key = ".."
 block_size = 10
-
+lookup_address = "127.0.0.1:8080"
 
 [[profiles]]
 pub_key = ".."
 priv_key = ".."
 block_size = 20
+lookup_address = "127.0.0.1:8080"
 ```
 
 Each field can be ommitted if not needed. The use of each field in the program is:
