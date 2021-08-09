@@ -24,6 +24,7 @@ pub async fn run(
     connect_pool: Arc<ConnectionPool>,
     sync: Arc<JobSync>,
     profile: Profile,
+    port: Option<u16>,
 ) -> Result<()> {
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
@@ -33,7 +34,12 @@ pub async fn run(
     let ip = Ipv4Addr::LOCALHOST;
 
     // Open socket and start listening
-    let listener = TcpListener::bind(&SocketAddr::V4(SocketAddrV4::new(ip, 0))).await?;
+    let socket = match port {
+        Some(p) => SocketAddr::V4(SocketAddrV4::new(ip, p)),
+        _ => SocketAddr::V4(SocketAddrV4::new(ip, 0)),
+    };
+
+    let listener = TcpListener::bind(socket).await?;
 
     let inbound_addr = listener.local_addr()?;
 

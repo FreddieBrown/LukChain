@@ -96,7 +96,7 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
     match role {
         Role::LookUp => {
             // Start Lookup server functionality
-            lookup::run().await
+            lookup::run(Some(8181)).await
         }
         _ => {
             participants::run(
@@ -104,6 +104,7 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
                 Arc::clone(&connect_pool),
                 Arc::clone(&sync),
                 profile,
+                None,
             )
             .await
         }

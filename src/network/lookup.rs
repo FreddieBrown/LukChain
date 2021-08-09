@@ -24,7 +24,7 @@ pub type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
 /// A lookup server uses a Distributed Hash Table-like functionality to store
 /// addresses of participants in the network, and allows connected network
 /// participants to find nodes to form initial connections with.
-pub async fn run() -> Result<()> {
+pub async fn run(port: Option<u16>) -> Result<()> {
     let address_table: AddressTable = Arc::new(RwLock::new(HashMap::new()));
 
     #[cfg(not(debug_assertions))]
@@ -33,11 +33,12 @@ pub async fn run() -> Result<()> {
     #[cfg(debug_assertions)]
     let ip = Ipv4Addr::LOCALHOST;
 
-    // Temporary solution
-    let port: u16 = 8181;
-
     // Open socket and start listening
-    let socket = SocketAddr::V4(SocketAddrV4::new(ip, port));
+    let socket = match port {
+        Some(p) => SocketAddr::V4(SocketAddrV4::new(ip, p)),
+        _ => SocketAddr::V4(SocketAddrV4::new(ip, 0)),
+    };
+
     let listener = TcpListener::bind(&socket).await?;
 
     info!("Running on: {}", &socket);
