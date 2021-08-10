@@ -1,7 +1,10 @@
 //! Node structure containing all information for application
-use crate::blockchain::{Block, BlockChain, Event};
-use crate::config::Profile;
-use crate::network::accounts::{Account, Role};
+
+use crate::blockchain::{
+    config::Profile,
+    network::accounts::{Account, Role},
+    Block, BlockChain, Event,
+};
 
 use anyhow::Result;
 use tokio::sync::RwLock;

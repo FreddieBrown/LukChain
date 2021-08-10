@@ -1,5 +1,7 @@
-use blockchat::config::{Config, Profile};
-use blockchat::network::{run, Role};
+use blockchat::blockchain::{
+    config::{Config, Profile},
+    network::{run, Role},
+};
 
 use std::collections::HashSet;
 use std::fs::File;

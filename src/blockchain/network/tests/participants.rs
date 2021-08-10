@@ -1,12 +1,16 @@
-use crate::config::Profile;
-use crate::network::{
-    accounts::{Account, Role},
-    connections::ConnectionPool,
-    lookup,
-    messages::{MessageData, NetworkMessage},
-    nodes::Node,
-    participants,
-    runner::{send_message, JobSync},
+//! Functions to run tests on participants in the network
+
+use crate::blockchain::{
+    config::Profile,
+    network::{
+        accounts::{Account, Role},
+        connections::ConnectionPool,
+        lookup,
+        messages::{MessageData, NetworkMessage},
+        nodes::Node,
+        participants,
+        runner::{send_message, JobSync},
+    },
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};

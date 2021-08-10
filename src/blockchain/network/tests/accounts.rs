@@ -1,7 +1,7 @@
-use crate::{
-    blockchain::{Data, Event},
+use crate::blockchain::{
     config::Profile,
     network::{Account, Role},
+    Data, Event,
 };
 
 #[test]

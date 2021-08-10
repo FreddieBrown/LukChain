@@ -1,9 +1,9 @@
 use crate::blockchain::{
+    config::Profile,
     events::{Data, Event},
+    network::{Account, Role},
     Block, BlockChain,
 };
-use crate::config::Profile;
-use crate::network::{Account, Role};
 
 // Basic tests
 #[test]

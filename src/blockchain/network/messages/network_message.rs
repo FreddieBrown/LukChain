@@ -1,6 +1,5 @@
 ///! Functionality for creating sendable messages across network.
-use crate::blockchain::{Block, BlockChain, Data, Event};
-use crate::network::Role;
+use crate::blockchain::{network::Role, Block, BlockChain, Data, Event};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};

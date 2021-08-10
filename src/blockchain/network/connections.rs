@@ -1,4 +1,4 @@
-use crate::network::Role;
+use crate::blockchain::network::Role;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

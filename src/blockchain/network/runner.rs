@@ -1,12 +1,14 @@
 ///! Runner functions for participating in network
-use crate::config::Profile;
-use crate::network::{
-    accounts::Role,
-    connections::ConnectionPool,
-    lookup,
-    messages::{NetworkMessage, ProcessMessage},
-    nodes::Node,
-    participants,
+use crate::blockchain::{
+    config::Profile,
+    network::{
+        accounts::Role,
+        connections::ConnectionPool,
+        lookup,
+        messages::{NetworkMessage, ProcessMessage},
+        nodes::Node,
+        participants,
+    },
 };
 
 use std::collections::HashSet;

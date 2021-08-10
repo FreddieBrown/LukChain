@@ -1,11 +1,15 @@
-use crate::blockchain::{Block, Data, Event};
-use crate::config::Profile;
-use crate::network::{
-    accounts::Role,
-    connections::{Connection, ConnectionPool},
-    messages::{MessageData, NetworkMessage, ProcessMessage},
-    nodes::Node,
-    runner::{send_message, JobSync},
+//! Functions to run network participants
+
+use crate::blockchain::{
+    config::Profile,
+    network::{
+        accounts::Role,
+        connections::{Connection, ConnectionPool},
+        messages::{MessageData, NetworkMessage, ProcessMessage},
+        nodes::Node,
+        runner::{send_message, JobSync},
+    },
+    Block, Data, Event,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};

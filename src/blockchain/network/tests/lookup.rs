@@ -1,4 +1,4 @@
-use crate::network::{
+use crate::blockchain::network::{
     accounts::Role,
     lookup::run,
     messages::{MessageData, NetworkMessage},
