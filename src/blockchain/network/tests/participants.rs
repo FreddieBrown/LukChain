@@ -46,7 +46,7 @@ async fn test_lookup_and_connect() {
             let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
 
             sleep(Duration::from_millis(100)).await;
-            participants_run::<Data>(profile, None, Role::User, None).await
+            participants_run::<Data>(profile, None, Role::User, false, None).await
         }),
         part_registration,
     );

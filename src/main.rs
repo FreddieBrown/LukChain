@@ -119,6 +119,7 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
                 profile,
                 None,
                 role,
+                true,
                 Some(|x| loop {
                     futures::executor::block_on(x.write_notify.notified());
                     {

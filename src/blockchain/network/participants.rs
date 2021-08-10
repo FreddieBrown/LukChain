@@ -35,11 +35,12 @@ pub async fn participants_run<T: 'static + BlockChainBase>(
     profile: Profile,
     port: Option<u16>,
     role: Role,
+    write_back: bool,
     application_runner: Option<fn(Arc<JobSync<T>>)>,
 ) -> Result<()> {
     let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone()));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new(application_runner.is_some()));
+    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new(write_back));
 
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
