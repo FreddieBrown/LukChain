@@ -86,7 +86,12 @@ async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> R
             }
             MessageData::RequestAddress(id) => get_connection(id, addr_clone).await,
             MessageData::GeneralAddrRequest => {
-                MessageData::PeerAddresses(get_connections(client_id, addr_clone).await)
+                let connections = get_connections(client_id, addr_clone).await;
+                if connections.len() == 0 {
+                    MessageData::NoAddr
+                } else {
+                    MessageData::PeerAddresses(connections)
+                }
             }
             MessageData::Finish => break,
             _ => MessageData::NoAddr,

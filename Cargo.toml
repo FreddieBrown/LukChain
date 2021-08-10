@@ -23,5 +23,8 @@ log = "0.4.14"
 toml = "0.5.8"
 futures = "0.3.16"
 
+[dev-dependencies]
+tracing-test = "0.1.0"
+
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
