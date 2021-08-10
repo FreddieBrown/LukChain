@@ -114,6 +114,16 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
             // Start Lookup server functionality
             lookup_run::<Data>(Some(8181)).await
         }
-        _ => participants_run::<Data>(profile, None, role).await,
+        _ => {
+            participants_run::<Data>(
+                profile,
+                None,
+                role,
+                Some(|_| {
+                    println!("This is a basic silly example");
+                }),
+            )
+            .await
+        }
     }
 }
