@@ -11,6 +11,11 @@ use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+/// Events that are stored on [`BlockChain`]
+///
+/// When something needs to be stored on the [`BlockChain`], an
+/// [`Event`] is created, and the data to be stored on the chain
+/// is contained within it.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Event<T> {
     pub made_by: u128,
@@ -20,6 +25,7 @@ pub struct Event<T> {
     pub created_at: Duration,
 }
 
+/// Basic struct to show what can be stored on the [`BlockChain`]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Data {
     // Need to encrypt data in message using target public key
