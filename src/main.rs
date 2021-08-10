@@ -114,6 +114,24 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
             // Start Lookup server functionality
             lookup_run::<Data>(Some(8181)).await
         }
-        _ => participants_run::<Data>(profile, None, role).await,
+        _ => {
+            participants_run::<Data>(
+                profile,
+                None,
+                role,
+                Some(|x| loop {
+                    futures::executor::block_on(x.write_notify.notified());
+                    {
+                        let mut unlocked_read = futures::executor::block_on(x.write_back.write());
+
+                        while unlocked_read.len() > 0 {
+                            let message = unlocked_read.remove(0);
+                            println!("MESSAGE: {:?}", message);
+                        }
+                    }
+                }),
+            )
+            .await
+        }
     }
 }

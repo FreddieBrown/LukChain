@@ -7,10 +7,15 @@ use std::time::{Duration, SystemTime};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
-use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
+use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+/// Events that are stored on [`BlockChain`]
+///
+/// When something needs to be stored on the [`BlockChain`], an
+/// [`Event`] is created, and the data to be stored on the chain
+/// is contained within it.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Event<T> {
     pub made_by: u128,
@@ -20,6 +25,7 @@ pub struct Event<T> {
     pub created_at: Duration,
 }
 
+/// Basic struct to show what can be stored on the [`BlockChain`]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Data {
     // Need to encrypt data in message using target public key
@@ -51,11 +57,16 @@ impl<T: BlockChainBase> Event<T> {
         return Vec::from(hasher.result_str().as_bytes());
     }
 
-    pub fn execute(&self, pub_key: Option<&RsaPublicKey>) {
-        self.data.execute(pub_key.clone());
+    pub fn execute(
+        &self,
+        priv_key: &RsaPrivateKey,
+        foreign_pub_key: Option<&RsaPublicKey>,
+        id: u128,
+    ) {
+        self.data.execute(priv_key, id);
 
         if self.signature.is_some() {
-            if self.verify_sign(pub_key.unwrap()) {
+            if self.verify_sign(foreign_pub_key.unwrap()) {
                 debug!("Message correctly signed");
             } else {
                 debug!("Message incorrectly signed");
@@ -82,14 +93,25 @@ impl<T: BlockChainBase> Event<T> {
 }
 
 impl BlockChainBase for Data {
-    fn execute(&self, pub_key: Option<&RsaPublicKey>) {
+    fn execute(&self, priv_key: &RsaPrivateKey, own_id: u128) {
         match self {
-            Data::IndividualMessage(id, _) => {
+            Data::IndividualMessage(id, encrypted) => {
                 // Change so if this is our ID, we can decrypt it
-                println!("FOR {}: ENCRYPTED", id)
+                if &own_id == id {
+                    let padding = PaddingScheme::new_pkcs1v15_encrypt();
+                    let decrypted = priv_key
+                        .decrypt(padding, &encrypted)
+                        .expect("failed to decrypt");
+                    debug!(
+                        "DECRYPTED MESSAGE: {}",
+                        String::from_utf8(decrypted).unwrap()
+                    );
+                } else {
+                    debug!("ENCRYPTED MESSAGE");
+                }
             }
-            Data::GroupMessage(m) => println!("MESSAGE: {}", m),
-            Data::NewUser { id, .. } => println!("NEW USER: {}", id),
+            Data::GroupMessage(m) => debug!("MESSAGE: {}", m),
+            Data::NewUser { id, .. } => debug!("NEW USER: {}", id),
         };
     }
 }

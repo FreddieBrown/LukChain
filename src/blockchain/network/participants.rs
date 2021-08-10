@@ -24,14 +24,22 @@ use tokio::task;
 use tracing::{debug, error, info};
 
 /// Main runner function for participant functionality
+///
+/// Needs to have a defined base datatype for the [`BlockChain`] to
+/// store. The default one in this librar is [`Data`]. Also provided
+/// is the ability to pass in a function which can interact with the
+/// [`JobSync`] mechanism. This lets the user build application
+/// logic which can be used to do specific tasks, like create and
+/// send messages to the outgoing thread.
 pub async fn participants_run<T: 'static + BlockChainBase>(
     profile: Profile,
     port: Option<u16>,
     role: Role,
+    application_runner: Option<fn(Arc<JobSync<T>>)>,
 ) -> Result<()> {
     let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone()));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new());
+    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new(application_runner.is_some()));
 
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
@@ -74,15 +82,16 @@ pub async fn participants_run<T: 'static + BlockChainBase>(
         listener,
     );
 
+    let sync_cpy = Arc::clone(&sync);
     let outgoing_fut = tokio::spawn(async move {
-        outgoing_connections(
-            Arc::clone(&node),
-            Arc::clone(&connect_pool),
-            Arc::clone(&sync),
-        )
-        .await
-        .unwrap()
+        outgoing_connections(Arc::clone(&node), Arc::clone(&connect_pool), sync_cpy)
+            .await
+            .unwrap()
     });
+
+    if let Some(f) = application_runner {
+        f(Arc::clone(&sync));
+    }
 
     match join!(inbound_fut, outgoing_fut) {
         (Ok(_), Err(e)) => error!("Error in futures: {}", e),
@@ -346,7 +355,11 @@ async fn recv_state_machine<T: BlockChainBase>(
                             let last_hash = bc_unlocked.last_hash();
                             let mut block: Block<T> = Block::new(last_hash);
                             block.add_events(unlocked_events.clone());
-                            bc_unlocked.append(block.clone())?;
+                            bc_unlocked.append(
+                                block.clone(),
+                                &node.account.priv_key,
+                                node.account.id,
+                            )?;
                             *unlocked_events = Vec::new();
                             ns_unlocked.insert(e.nonce);
                             ns_unlocked.insert(block.nonce);
@@ -391,6 +404,13 @@ async fn recv_state_machine<T: BlockChainBase>(
             if !node.in_chain(&b).await {
                 // add to blockchain
                 node.add_block(b.clone()).await?;
+                if sync.write_permission {
+                    // Write message to buffer
+                    let mut unlock_write_back = sync.write_back.write().await;
+                    unlock_write_back.push(message.clone());
+                    // Increase number of permits
+                    sync.write_notify.notify_one();
+                }
                 // TODO: Go through loose events and remove any which are in block
                 let mut unlocked_loose = node.loose_events.write().await;
                 let dropped = unlocked_loose

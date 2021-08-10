@@ -1,4 +1,7 @@
-use crate::blockchain::{network::messages::ProcessMessage, BlockChainBase};
+use crate::blockchain::{
+    network::messages::{NetworkMessage, ProcessMessage},
+    BlockChainBase,
+};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,11 +20,14 @@ pub struct JobSync<T: BlockChainBase> {
     pub notify: Notify,
     pub sender: Sender<ProcessMessage<T>>,
     pub receiver: RwLock<Receiver<ProcessMessage<T>>>,
+    pub write_back: RwLock<Vec<NetworkMessage<T>>>,
+    pub write_permission: bool,
+    pub write_notify: Notify,
 }
 
 impl<T: BlockChainBase> JobSync<T> {
     /// Creates a new instance of JobSync
-    pub fn new() -> Self {
+    pub fn new(write_permission: bool) -> Self {
         let (tx, rx) = mpsc::channel::<ProcessMessage<T>>(1000);
         Self {
             nonce_set: RwLock::new(HashSet::new()),
@@ -30,6 +36,9 @@ impl<T: BlockChainBase> JobSync<T> {
             notify: Notify::new(),
             sender: tx,
             receiver: RwLock::new(rx),
+            write_back: RwLock::new(Vec::new()),
+            write_permission,
+            write_notify: Notify::new(),
         }
     }
 

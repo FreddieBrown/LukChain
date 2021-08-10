@@ -5,6 +5,9 @@ use crate::blockchain::{
     Block, BlockChain,
 };
 
+use rand::rngs::OsRng;
+use rsa::RsaPrivateKey;
+
 // Basic tests
 #[test]
 fn create_blockchain() {
@@ -33,12 +36,13 @@ fn add_event_to_block() {
 
 #[test]
 fn add_block_to_blockchain() {
+    let private_key = RsaPrivateKey::new(&mut OsRng, 2048).expect("failed to generate a key");
     let mut bc: BlockChain<Data> = BlockChain::new();
     let mut block: Block<Data> = Block::new(None);
     let event: Event<Data> = Event::new(10, Data::GroupMessage(String::from("Hello")));
     block.add_event(event);
     assert!(block.get_event_count() == 1);
-    assert!(bc.append(block).is_ok());
+    assert!(bc.append(block, &private_key, 1).is_ok());
     assert!(bc.chain.len() == 1);
 }
 
