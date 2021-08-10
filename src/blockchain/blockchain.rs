@@ -9,7 +9,7 @@ use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
-use rsa::RsaPublicKey;
+use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -51,8 +51,11 @@ impl<T: BlockChainBase> BlockChain<T> {
         self.chain[self.chain.len() - 1].hash.clone()
     }
 
-    /// Adds a new `Block` to the `Blockchain`
-    pub fn append(&mut self, block: Block<T>) -> Result<()> {
+    /// Adds a new [`Block`] to the [`Blockchain`]
+    ///
+    /// [`id`] is the ID of the user who is in charge of the local instance of the
+    /// [`BlockChain`]
+    pub fn append(&mut self, block: Block<T>, priv_key: &RsaPrivateKey, id: u128) -> Result<()> {
         // Validate `Block`
         if !block.verify_hash() {
             return Err(Error::msg("Own hash could not be varified"));
@@ -67,9 +70,9 @@ impl<T: BlockChainBase> BlockChain<T> {
         // Go through each event and check the data enclosed
         for event in block.events.iter() {
             if self.users.contains_key(&event.made_by) {
-                event.execute(self.users.get(&event.made_by));
+                event.execute(priv_key, self.users.get(&event.made_by), id);
             } else {
-                event.execute(None);
+                event.execute(priv_key, None, id);
             }
         }
 

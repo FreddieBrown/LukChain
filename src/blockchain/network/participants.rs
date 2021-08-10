@@ -346,7 +346,11 @@ async fn recv_state_machine<T: BlockChainBase>(
                             let last_hash = bc_unlocked.last_hash();
                             let mut block: Block<T> = Block::new(last_hash);
                             block.add_events(unlocked_events.clone());
-                            bc_unlocked.append(block.clone())?;
+                            bc_unlocked.append(
+                                block.clone(),
+                                &node.account.priv_key,
+                                node.account.id,
+                            )?;
                             *unlocked_events = Vec::new();
                             ns_unlocked.insert(e.nonce);
                             ns_unlocked.insert(block.nonce);

@@ -45,6 +45,6 @@ impl<T: BlockChainBase> Node<T> {
 
     pub async fn add_block(&self, block: Block<T>) -> Result<()> {
         let mut unlocked = self.blockchain.write().await;
-        unlocked.append(block)
+        unlocked.append(block, &self.account.priv_key, self.account.id)
     }
 }
