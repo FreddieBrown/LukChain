@@ -13,3 +13,19 @@ pub struct Profile {
     pub block_size: Option<usize>,
     pub lookup_address: Option<String>,
 }
+
+impl Profile {
+    pub fn new(
+        pub_key: Option<RsaPublicKey>,
+        priv_key: Option<RsaPrivateKey>,
+        block_size: Option<usize>,
+        lookup_address: Option<String>,
+    ) -> Self {
+        Self {
+            pub_key,
+            priv_key,
+            block_size,
+            lookup_address,
+        }
+    }
+}

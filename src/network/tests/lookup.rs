@@ -10,6 +10,7 @@ use tokio::net::TcpStream;
 use tracing_test::traced_test;
 
 #[tokio::test]
+#[traced_test]
 async fn test_sanity() {
     assert_eq!(1, 1);
 }
