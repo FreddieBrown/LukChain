@@ -1,20 +1,25 @@
 //! Node structure containing all information for application
-use crate::blockchain::{Block, BlockChain, Event};
-use crate::config::Profile;
-use crate::network::accounts::{Account, Role};
+
+use crate::blockchain::{
+    config::Profile,
+    network::accounts::{Account, Role},
+    Block, BlockChain, BlockChainBase, Event,
+};
+
+use std::fmt::Debug;
 
 use anyhow::Result;
 use tokio::sync::RwLock;
 
 /// Struct to contain all information about `Node`
 #[derive(Debug)]
-pub struct Node {
+pub struct Node<T: BlockChainBase> {
     pub account: Account,
-    pub blockchain: RwLock<BlockChain>,
-    pub loose_events: RwLock<Vec<Event>>,
+    pub blockchain: RwLock<BlockChain<T>>,
+    pub loose_events: RwLock<Vec<Event<T>>>,
 }
 
-impl Node {
+impl<T: BlockChainBase> Node<T> {
     pub fn new(role: Role, profile: Profile) -> Self {
         Self {
             account: Account::new(role, profile),
@@ -28,17 +33,17 @@ impl Node {
         unlocked.len()
     }
 
-    pub async fn chain_overlap(&self, chain: &BlockChain) -> f64 {
+    pub async fn chain_overlap(&self, chain: &BlockChain<T>) -> f64 {
         let unlocked = self.blockchain.read().await;
         unlocked.chain_overlap(chain)
     }
 
-    pub async fn in_chain(&self, block: &Block) -> bool {
+    pub async fn in_chain(&self, block: &Block<T>) -> bool {
         let unlocked = self.blockchain.read().await;
         unlocked.in_chain(block)
     }
 
-    pub async fn add_block(&self, block: Block) -> Result<()> {
+    pub async fn add_block(&self, block: Block<T>) -> Result<()> {
         let mut unlocked = self.blockchain.write().await;
         unlocked.append(block)
     }

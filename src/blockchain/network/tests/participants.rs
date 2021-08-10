@@ -1,16 +1,17 @@
-use crate::config::Profile;
-use crate::network::{
-    accounts::{Account, Role},
-    connections::ConnectionPool,
-    lookup,
-    messages::{MessageData, NetworkMessage},
-    nodes::Node,
-    participants,
-    runner::{send_message, JobSync},
+//! Functions to run tests on participants in the network
+
+use crate::blockchain::{
+    config::Profile,
+    network::{
+        accounts::{Account, Role},
+        lookup_run,
+        messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},
+        participants_run, send_message,
+    },
+    Data,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
 
 use futures::future::{AbortHandle, Abortable};
 use tokio::net::{TcpListener, TcpStream};
@@ -33,7 +34,7 @@ async fn test_lookup_and_connect() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup::run(Some(8281)).await.unwrap();
+            lookup_run::<Data>(Some(8281)).await.unwrap();
         }),
         lookup_registration,
     );
@@ -44,19 +45,8 @@ async fn test_lookup_and_connect() {
             // Define profile
             let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
 
-            let node: Arc<Node> = Arc::new(Node::new(Role::User, profile.clone()));
-            let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-            let sync: Arc<JobSync> = Arc::new(JobSync::new());
-
             sleep(Duration::from_millis(100)).await;
-            participants::run(
-                Arc::clone(&node),
-                Arc::clone(&connect_pool),
-                Arc::clone(&sync),
-                profile,
-                None,
-            )
-            .await
+            participants_run::<Data>(profile, None, Role::User).await
         }),
         part_registration,
     );
@@ -79,22 +69,24 @@ async fn test_lookup_and_connect() {
         let inbound_addr = listener.local_addr().unwrap();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(
             1,
             inbound_addr.to_string(),
             account.role,
         ));
 
-        send_message(&mut stream, reg_message).await.unwrap();
+        send_message::<Data>(&mut stream, reg_message)
+            .await
+            .unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
 
         assert!(matches!(recv_message.data, MessageData::Confirm));
 
-        let finish_message = NetworkMessage::new(MessageData::Finish);
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
 
         // StartUp Listener and wait for partcipant to connect
@@ -103,7 +95,7 @@ async fn test_lookup_and_connect() {
             // Accept initial ID Message
             let mut buffer = [0_u8; 4096];
             match NetworkMessage::from_stream(&mut inbound, &mut buffer).await {
-                Ok(m) => assert!(matches!(m.data, MessageData::InitialID(_, _))),
+                Ok(m) => assert!(matches!(m.data, MessageData::<Data>::InitialID(_, _, _))),
                 _ => assert!(false),
             };
         }

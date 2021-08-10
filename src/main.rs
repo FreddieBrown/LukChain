@@ -1,10 +1,14 @@
-use blockchat::config::{Config, Profile};
-use blockchat::network::{run, Role};
+use blockchat::blockchain::{
+    config::{Config, Profile},
+    network::{lookup_run, participants_run, Role},
+    Data,
+};
 
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 
+use anyhow::Result;
 use pico_args::Arguments;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -100,4 +104,16 @@ async fn main() {
     let chosen_role: Role = args.role.map_or(Role::User, |l| l);
     info!("Starting up as a ... {:?}", chosen_role);
     run(chosen_role, profile).await.unwrap();
+}
+
+pub async fn run(role: Role, profile: Profile) -> Result<()> {
+    info!("Input Profile: {:?}", &profile);
+
+    match role {
+        Role::LookUp => {
+            // Start Lookup server functionality
+            lookup_run::<Data>(Some(8181)).await
+        }
+        _ => participants_run::<Data>(profile, None, role).await,
+    }
 }

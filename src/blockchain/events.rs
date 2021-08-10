@@ -1,5 +1,7 @@
 //! Defining base element in the blockchain
+use crate::blockchain::BlockChainBase;
 
+use std::fmt::Debug;
 use std::time::{Duration, SystemTime};
 
 use crypto::digest::Digest;
@@ -7,11 +9,12 @@ use crypto::sha3::Sha3;
 use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Event {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Event<T> {
     pub made_by: u128,
-    pub data: Data,
+    pub data: T,
     pub nonce: u128,
     pub signature: Option<Vec<u8>>,
     pub created_at: Duration,
@@ -25,9 +28,9 @@ pub enum Data {
     NewUser { id: u128, pub_key: RsaPublicKey },
 }
 
-impl Event {
+impl<T: BlockChainBase> Event<T> {
     /// Create new `Event`
-    pub fn new(made_by: u128, data: Data) -> Self {
+    pub fn new(made_by: u128, data: T) -> Self {
         let mut rng = rand::thread_rng();
         Self {
             made_by,
@@ -49,19 +52,13 @@ impl Event {
     }
 
     pub fn execute(&self, pub_key: Option<&RsaPublicKey>) {
-        match self.data.clone() {
-            Data::IndividualMessage(id, _) => {
-                println!("SENDER {} FOR {}: ENCRYPTED", self.made_by, id)
-            }
-            Data::GroupMessage(m) => println!("MESSAGE: {}", m),
-            Data::NewUser { id, .. } => println!("NEW USER: {}", id),
-        };
+        self.data.execute(pub_key.clone());
 
         if self.signature.is_some() {
             if self.verify_sign(pub_key.unwrap()) {
-                println!("Message correctly signed");
+                debug!("Message correctly signed");
             } else {
-                println!("Message incorrectly signed");
+                debug!("Message incorrectly signed");
             }
         }
     }
@@ -84,13 +81,15 @@ impl Event {
     }
 }
 
-impl Data {
-    pub fn new_individual_message(location: u128, pub_key: &RsaPublicKey, message: String) -> Self {
-        let mut rng = rand::thread_rng();
-        let padding = PaddingScheme::new_pkcs1v15_encrypt();
-        let encrypted = pub_key
-            .encrypt(&mut rng, padding, message.as_bytes())
-            .expect("Failed to encrypt individual message");
-        Self::IndividualMessage(location, encrypted)
+impl BlockChainBase for Data {
+    fn execute(&self, pub_key: Option<&RsaPublicKey>) {
+        match self {
+            Data::IndividualMessage(id, _) => {
+                // Change so if this is our ID, we can decrypt it
+                println!("FOR {}: ENCRYPTED", id)
+            }
+            Data::GroupMessage(m) => println!("MESSAGE: {}", m),
+            Data::NewUser { id, .. } => println!("NEW USER: {}", id),
+        };
     }
 }

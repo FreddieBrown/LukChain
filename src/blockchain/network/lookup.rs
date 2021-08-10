@@ -1,8 +1,11 @@
 ///! Module which defines the behaviour of the lookup node
-use crate::network::{
-    accounts::Role,
-    messages::{MessageData, NetworkMessage},
-    runner::send_message,
+use crate::blockchain::{
+    network::{
+        accounts::Role,
+        messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},
+        send_message,
+    },
+    BlockChainBase,
 };
 
 use std::collections::HashMap;
@@ -17,14 +20,14 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
-pub type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
+type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
 
 /// Starts up lookup server functionality
 ///
 /// A lookup server uses a Distributed Hash Table-like functionality to store
 /// addresses of participants in the network, and allows connected network
 /// participants to find nodes to form initial connections with.
-pub async fn run(port: Option<u16>) -> Result<()> {
+pub async fn lookup_run<T: 'static + BlockChainBase>(port: Option<u16>) -> Result<()> {
     let address_table: AddressTable = Arc::new(RwLock::new(HashMap::new()));
 
     #[cfg(not(debug_assertions))]
@@ -48,7 +51,7 @@ pub async fn run(port: Option<u16>) -> Result<()> {
 
         let at_cp = Arc::clone(&address_table);
 
-        let fut = process_lookup(inbound, at_cp);
+        let fut = process_lookup::<T>(inbound, at_cp);
 
         if let Err(e) = tokio::spawn(async move { fut.await }).await? {
             error!("Error processing connection: {}", e);
@@ -62,18 +65,21 @@ pub async fn run(port: Option<u16>) -> Result<()> {
 ///
 /// Function is given a [`TcpStream`]. It then gets the ID from the
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
-async fn process_lookup(mut stream: TcpStream, address_table: AddressTable) -> Result<()> {
+async fn process_lookup<T: 'static + BlockChainBase>(
+    mut stream: TcpStream,
+    address_table: AddressTable,
+) -> Result<()> {
     let mut buffer = [0_u8; 4096];
     let mut client_id = 0;
 
     loop {
         let addr_clone = Arc::clone(&address_table);
-        let recv_message: NetworkMessage =
+        let recv_message: NetworkMessage<T> =
             NetworkMessage::from_stream(&mut stream, &mut buffer).await?;
         // Deal with initial message
         // Either specific request, or general request
 
-        let send_mess = NetworkMessage::new(match recv_message.data {
+        let send_mess = NetworkMessage::<T>::new(match recv_message.data {
             MessageData::LookUpReg(id, addr, role) => {
                 // Deal with data from message
                 let mut unlocked_table = addr_clone.write().await;
@@ -115,10 +121,13 @@ async fn get_connections(id: u128, address_table: AddressTable) -> Vec<String> {
         .choose_multiple(&mut thread_rng(), 4)
 }
 
-async fn get_connection(id: u128, address_table: AddressTable) -> MessageData {
+async fn get_connection<T: 'static + BlockChainBase>(
+    id: u128,
+    address_table: AddressTable,
+) -> MessageData<T> {
     let unlocked_table = address_table.read().await;
     if let Some((addr, _)) = unlocked_table.get(&id) {
-        MessageData::PeerAddress(addr.clone())
+        MessageData::<T>::PeerAddress(addr.clone())
     } else {
         MessageData::NoAddr
     }
