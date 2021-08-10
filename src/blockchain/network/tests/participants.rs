@@ -4,17 +4,13 @@ use crate::blockchain::{
     config::Profile,
     network::{
         accounts::{Account, Role},
-        connections::ConnectionPool,
-        lookup,
+        lookup_run,
         messages::{MessageData, NetworkMessage},
-        nodes::Node,
-        participants,
-        runner::{send_message, JobSync},
+        participants_run, send_message,
     },
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
 
 use futures::future::{AbortHandle, Abortable};
 use tokio::net::{TcpListener, TcpStream};
@@ -37,7 +33,7 @@ async fn test_lookup_and_connect() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup::run(Some(8281)).await.unwrap();
+            lookup_run(Some(8281)).await.unwrap();
         }),
         lookup_registration,
     );
@@ -48,19 +44,8 @@ async fn test_lookup_and_connect() {
             // Define profile
             let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
 
-            let node: Arc<Node> = Arc::new(Node::new(Role::User, profile.clone()));
-            let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-            let sync: Arc<JobSync> = Arc::new(JobSync::new());
-
             sleep(Duration::from_millis(100)).await;
-            participants::run(
-                Arc::clone(&node),
-                Arc::clone(&connect_pool),
-                Arc::clone(&sync),
-                profile,
-                None,
-            )
-            .await
+            participants_run(profile, None, Role::User).await
         }),
         part_registration,
     );

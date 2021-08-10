@@ -7,7 +7,7 @@ use crate::blockchain::{
         connections::{Connection, ConnectionPool},
         messages::{MessageData, NetworkMessage, ProcessMessage},
         nodes::Node,
-        runner::{send_message, JobSync},
+        send_message, JobSync,
     },
     Block, Data, Event,
 };
@@ -23,13 +23,11 @@ use tokio::task;
 use tracing::{debug, error, info};
 
 /// Main runner function for participant functionality
-pub async fn run(
-    node: Arc<Node>,
-    connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync>,
-    profile: Profile,
-    port: Option<u16>,
-) -> Result<()> {
+pub async fn participants_run(profile: Profile, port: Option<u16>, role: Role) -> Result<()> {
+    let node: Arc<Node> = Arc::new(Node::new(role, profile.clone()));
+    let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
+    let sync: Arc<JobSync> = Arc::new(JobSync::new());
+
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
     let ip = Ipv4Addr::UNSPECIFIED;

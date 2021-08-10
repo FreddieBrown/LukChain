@@ -1,8 +1,8 @@
 use crate::blockchain::network::{
     accounts::Role,
-    lookup::run,
+    lookup::lookup_run,
     messages::{MessageData, NetworkMessage},
-    runner::send_message,
+    send_message,
 };
 
 use futures::future::{AbortHandle, Abortable};
@@ -23,7 +23,7 @@ async fn test_lookup_registration() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            run(Some(8181)).await.unwrap();
+            lookup_run(Some(8181)).await.unwrap();
         }),
         abort_registration,
     );
@@ -64,7 +64,7 @@ async fn test_lookup_request_less_than_4() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            run(Some(8182)).await.unwrap();
+            lookup_run(Some(8182)).await.unwrap();
         }),
         abort_registration,
     );
@@ -128,7 +128,7 @@ async fn test_lookup_request_4() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            run(Some(8183)).await.unwrap();
+            lookup_run(Some(8183)).await.unwrap();
         }),
         abort_registration,
     );
@@ -210,7 +210,7 @@ async fn test_lookup_when_empty() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            run(Some(8184)).await.unwrap();
+            lookup_run(Some(8184)).await.unwrap();
         }),
         abort_registration,
     );
@@ -261,7 +261,7 @@ async fn test_lookup_request_1() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            run(Some(8185)).await.unwrap();
+            lookup_run(Some(8185)).await.unwrap();
         }),
         abort_registration,
     );

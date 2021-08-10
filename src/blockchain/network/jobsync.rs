@@ -1,32 +1,13 @@
-///! Runner functions for participating in network
-use crate::blockchain::{
-    config::Profile,
-    network::{
-        accounts::Role,
-        connections::ConnectionPool,
-        lookup,
-        messages::{NetworkMessage, ProcessMessage},
-        nodes::Node,
-        participants,
-    },
-};
+use crate::blockchain::network::messages::ProcessMessage;
 
 use std::collections::HashSet;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
-
-use anyhow::Result;
-
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     Notify, RwLock,
 };
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Synchronisation struct to maintain the job queue
 pub struct JobSync {
@@ -86,40 +67,4 @@ impl JobSync {
             self.permits.load(Ordering::SeqCst)
         );
     }
-}
-
-pub async fn run(role: Role, profile: Profile) -> Result<()> {
-    info!("Input Profile: {:?}", &profile);
-
-    let node: Arc<Node> = Arc::new(Node::new(role, profile.clone()));
-    let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    let sync: Arc<JobSync> = Arc::new(JobSync::new());
-
-    match role {
-        Role::LookUp => {
-            // Start Lookup server functionality
-            lookup::run(Some(8181)).await
-        }
-        _ => {
-            participants::run(
-                Arc::clone(&node),
-                Arc::clone(&connect_pool),
-                Arc::clone(&sync),
-                profile,
-                None,
-            )
-            .await
-        }
-    }
-}
-
-/// Sends a new message to a [`Connection`] in [`ConnectionPool`]
-///
-/// Takes in a new [`NetworkMessage`] and distributes it to a [`Connection`] in the
-/// [`ConnectionPool`] so they are aware of the information which is bein spread.
-pub async fn send_message(stream: &mut TcpStream, message: NetworkMessage) -> Result<()> {
-    debug!("Sending Message: {:?}", &message);
-    let bytes_message = message.as_bytes();
-    stream.write_all(&bytes_message).await?;
-    Ok(())
 }

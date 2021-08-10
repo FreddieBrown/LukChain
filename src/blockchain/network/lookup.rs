@@ -2,7 +2,7 @@
 use crate::blockchain::network::{
     accounts::Role,
     messages::{MessageData, NetworkMessage},
-    runner::send_message,
+    send_message,
 };
 
 use std::collections::HashMap;
@@ -17,14 +17,14 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
-pub type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
+type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
 
 /// Starts up lookup server functionality
 ///
 /// A lookup server uses a Distributed Hash Table-like functionality to store
 /// addresses of participants in the network, and allows connected network
 /// participants to find nodes to form initial connections with.
-pub async fn run(port: Option<u16>) -> Result<()> {
+pub async fn lookup_run(port: Option<u16>) -> Result<()> {
     let address_table: AddressTable = Arc::new(RwLock::new(HashMap::new()));
 
     #[cfg(not(debug_assertions))]
