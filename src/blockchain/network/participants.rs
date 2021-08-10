@@ -39,7 +39,7 @@ pub async fn participants_run<T: 'static + BlockChainBase>(
 ) -> Result<()> {
     let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone()));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new());
+    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new(application_runner.is_some()));
 
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
@@ -404,6 +404,13 @@ async fn recv_state_machine<T: BlockChainBase>(
             if !node.in_chain(&b).await {
                 // add to blockchain
                 node.add_block(b.clone()).await?;
+                if sync.write_permission {
+                    // Write message to buffer
+                    let mut unlock_write_back = sync.write_back.write().await;
+                    unlock_write_back.push(message.clone());
+                    // Increase number of permits
+                    sync.write_notify.notify_one();
+                }
                 // TODO: Go through loose events and remove any which are in block
                 let mut unlocked_loose = node.loose_events.write().await;
                 let dropped = unlocked_loose

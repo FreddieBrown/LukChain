@@ -119,8 +119,16 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
                 profile,
                 None,
                 role,
-                Some(|_| {
-                    println!("This is a basic silly example");
+                Some(|x| loop {
+                    futures::executor::block_on(x.write_notify.notified());
+                    {
+                        let mut unlocked_read = futures::executor::block_on(x.write_back.write());
+
+                        while unlocked_read.len() > 0 {
+                            let message = unlocked_read.remove(0);
+                            println!("MESSAGE: {:?}", message);
+                        }
+                    }
                 }),
             )
             .await
