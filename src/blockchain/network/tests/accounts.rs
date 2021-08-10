@@ -16,6 +16,6 @@ fn account_sign_event() {
             lookup_address: None,
         },
     );
-    let event: Event = user.new_event(Data::GroupMessage(String::from("Hello")));
+    let event: Event<Data> = user.new_event(Data::GroupMessage(String::from("Hello")));
     assert!(event.verify_sign(&user.pub_key));
 }

@@ -1,4 +1,4 @@
-use crate::blockchain::network::messages::ProcessMessage;
+use crate::blockchain::{network::messages::ProcessMessage, BlockChainBase};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,19 +10,19 @@ use tokio::sync::{
 use tracing::debug;
 
 /// Synchronisation struct to maintain the job queue
-pub struct JobSync {
+pub struct JobSync<T: BlockChainBase> {
     pub nonce_set: RwLock<HashSet<u128>>,
     pub permits: AtomicUsize,
     pub waiters: AtomicUsize,
     pub notify: Notify,
-    pub sender: Sender<ProcessMessage>,
-    pub receiver: RwLock<Receiver<ProcessMessage>>,
+    pub sender: Sender<ProcessMessage<T>>,
+    pub receiver: RwLock<Receiver<ProcessMessage<T>>>,
 }
 
-impl JobSync {
+impl<T: BlockChainBase> JobSync<T> {
     /// Creates a new instance of JobSync
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel::<ProcessMessage>(1000);
+        let (tx, rx) = mpsc::channel::<ProcessMessage<T>>(1000);
         Self {
             nonce_set: RwLock::new(HashSet::new()),
             permits: AtomicUsize::new(0),

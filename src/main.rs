@@ -1,6 +1,7 @@
 use blockchat::blockchain::{
     config::{Config, Profile},
     network::{lookup_run, participants_run, Role},
+    Data,
 };
 
 use std::collections::HashSet;
@@ -111,8 +112,8 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
     match role {
         Role::LookUp => {
             // Start Lookup server functionality
-            lookup_run(Some(8181)).await
+            lookup_run::<Data>(Some(8181)).await
         }
-        _ => participants_run(profile, None, role).await,
+        _ => participants_run::<Data>(profile, None, role).await,
     }
 }

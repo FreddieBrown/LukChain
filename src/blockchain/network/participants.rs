@@ -5,11 +5,11 @@ use crate::blockchain::{
     network::{
         accounts::Role,
         connections::{Connection, ConnectionPool},
-        messages::{MessageData, NetworkMessage, ProcessMessage},
+        messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage, ProcessMessage},
         nodes::Node,
         send_message, JobSync,
     },
-    Block, Data, Event,
+    Block, BlockChainBase, Event,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -18,15 +18,20 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use futures::join;
+use rsa::RsaPublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
 use tracing::{debug, error, info};
 
 /// Main runner function for participant functionality
-pub async fn participants_run(profile: Profile, port: Option<u16>, role: Role) -> Result<()> {
-    let node: Arc<Node> = Arc::new(Node::new(role, profile.clone()));
+pub async fn participants_run<T: 'static + BlockChainBase>(
+    profile: Profile,
+    port: Option<u16>,
+    role: Role,
+) -> Result<()> {
+    let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone()));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    let sync: Arc<JobSync> = Arc::new(JobSync::new());
+    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new());
 
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
@@ -69,7 +74,7 @@ pub async fn participants_run(profile: Profile, port: Option<u16>, role: Role) -
         listener,
     );
 
-    let outgoing_fut = task::spawn(async move {
+    let outgoing_fut = tokio::spawn(async move {
         outgoing_connections(
             Arc::clone(&node),
             Arc::clone(&connect_pool),
@@ -94,9 +99,9 @@ pub async fn participants_run(profile: Profile, port: Option<u16>, role: Role) -
 /// Node registers itself with the LookUp server and requests connections for
 /// it to make. It then creates a [`ProcessMessage::NewConnection`] for each
 /// address and puts them into the job queue.
-async fn initial_lookup(
-    node: Arc<Node>,
-    sync: Arc<JobSync>,
+async fn initial_lookup<T: 'static + BlockChainBase>(
+    node: Arc<Node<T>>,
+    sync: Arc<JobSync<T>>,
     address: String,
     own_addr: String,
 ) -> Result<()> {
@@ -105,30 +110,30 @@ async fn initial_lookup(
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
-    let reg_message = NetworkMessage::new(MessageData::LookUpReg(
+    let reg_message = NetworkMessage::<T>::new(MessageData::LookUpReg(
         node.account.id,
         own_addr,
         node.account.role,
     ));
 
-    send_message(&mut stream, reg_message).await?;
+    send_message::<T>(&mut stream, reg_message).await?;
 
     debug!("Sent Reg Message");
 
     if matches!(
-        NetworkMessage::from_stream(&mut stream, &mut buffer)
+        NetworkMessage::<T>::from_stream(&mut stream, &mut buffer)
             .await?
             .data,
         MessageData::Confirm
     ) {
         // Create general request message and send over stream
-        let gen_req = NetworkMessage::new(MessageData::GeneralAddrRequest);
+        let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest);
 
-        send_message(&mut stream, gen_req).await?;
+        send_message::<T>(&mut stream, gen_req).await?;
 
         debug!("Sent Message");
 
-        let read_in = NetworkMessage::from_stream(&mut stream, &mut buffer).await?;
+        let read_in = NetworkMessage::<T>::from_stream(&mut stream, &mut buffer).await?;
 
         debug!("Read Message");
 
@@ -157,7 +162,7 @@ async fn initial_lookup(
         }
     }
 
-    let finish_message = NetworkMessage::new(MessageData::Finish);
+    let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
     send_message(&mut stream, finish_message).await?;
 
     Ok(())
@@ -165,29 +170,30 @@ async fn initial_lookup(
 
 /// Function to start up functions which deal with inbound
 /// connections and message traffic
-async fn inbound(
-    node: Arc<Node>,
+async fn inbound<T: 'static + BlockChainBase + Send>(
+    node: Arc<Node<T>>,
     connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync>,
+    sync: Arc<JobSync<T>>,
     listener: TcpListener,
 ) -> Result<()> {
     // Thread to listen for inbound connections (reactive)
     //     Put all connections into connect pool
-    let cp_copy = Arc::clone(&connect_pool);
-    let node_copy = Arc::clone(&node);
+    let node_cpy = Arc::clone(&node);
+    let cp_cpy = Arc::clone(&connect_pool);
     task::spawn(async move {
-        incoming_connections(node_copy, cp_copy, listener)
+        incoming_connections(node_cpy, cp_cpy, listener)
             .await
             .unwrap()
     });
     // Thread to go through all connections and deal with incoming messages (reactive)
-    let node_copy = Arc::clone(&node);
-    let cp_copy = Arc::clone(&connect_pool);
-    let sync_copy = Arc::clone(&sync);
     task::spawn(async move {
-        check_connections(node_copy, cp_copy, sync_copy)
-            .await
-            .unwrap()
+        check_connections(
+            Arc::clone(&node),
+            Arc::clone(&connect_pool),
+            Arc::clone(&sync),
+        )
+        .await
+        .unwrap()
     })
     .await?;
 
@@ -199,8 +205,8 @@ async fn inbound(
 /// Listens to a inbound port and accepts connections coming from other
 /// participants in the network. Takes the connections and inserts them
 /// into the `connect_pool`.
-async fn incoming_connections(
-    node: Arc<Node>,
+async fn incoming_connections<T: 'static + BlockChainBase>(
+    node: Arc<Node<T>>,
     connect_pool: Arc<ConnectionPool>,
     listener: TcpListener,
 ) -> Result<()> {
@@ -224,25 +230,23 @@ async fn incoming_connections(
 ///
 /// Function is given a [`TcpStream`]. It then gets the ID from the
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
-async fn process_connection(
+async fn process_connection<T: 'static + BlockChainBase>(
     mut stream: TcpStream,
-    node: Arc<Node>,
+    node: Arc<Node<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     // Get the actual ID of the Connection from the stream
-    let (id, pub_key, role) = match initial_stream_handler(&mut stream).await {
-        Some((Data::NewUser { id, pub_key }, role)) => (id, pub_key, role),
+    let (id, pub_key, role) = match initial_stream_handler::<T>(&mut stream).await {
+        Some((id, pub_key, role)) => (id, pub_key, role),
         _ => return Err(Error::msg("Error getting initial data Message")),
     };
 
     debug!("ID of new connection: {}", id);
 
     // Send back initial ID
-    let send_mess = NetworkMessage::new(MessageData::InitialID(
-        Data::NewUser {
-            id: node.account.id,
-            pub_key: node.account.pub_key.clone(),
-        },
+    let send_mess = NetworkMessage::<T>::new(MessageData::InitialID(
+        node.account.id,
+        node.account.pub_key.clone(),
         node.account.role,
     ));
     send_message(&mut stream, send_mess).await?;
@@ -254,11 +258,13 @@ async fn process_connection(
 }
 
 /// Finds the [`MessageData::InitialID`] in a [`TcpStream`]
-async fn initial_stream_handler(stream: &mut TcpStream) -> Option<(Data, Role)> {
+async fn initial_stream_handler<T: BlockChainBase>(
+    stream: &mut TcpStream,
+) -> Option<(u128, RsaPublicKey, Role)> {
     let mut buffer = [0_u8; 4096];
-    match NetworkMessage::from_stream(stream, &mut buffer).await {
+    match NetworkMessage::<T>::from_stream(stream, &mut buffer).await {
         Ok(m) => match m.data {
-            MessageData::InitialID(data, role) => Some((data, role)),
+            MessageData::InitialID(id, key, role) => Some((id, key, role)),
             _ => None,
         },
         _ => None,
@@ -266,10 +272,10 @@ async fn initial_stream_handler(stream: &mut TcpStream) -> Option<(Data, Role)> 
 }
 
 /// Goes through each [`Connection`] and checks to see if they contain a [`NetworkMessage`]
-async fn check_connections(
-    node: Arc<Node>,
+async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
+    node: Arc<Node<T>>,
     connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync>,
+    sync: Arc<JobSync<T>>,
 ) -> Result<()> {
     debug!("Checking connections in ConnectionPool");
     loop {
@@ -290,7 +296,7 @@ async fn check_connections(
 
                 // If it does, pass to state machine
                 if peeked > 0 {
-                    let message: NetworkMessage =
+                    let message: NetworkMessage<T> =
                         NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
                             .await
                             .map_err(|_| Error::msg("Error with stream"))
@@ -311,10 +317,10 @@ async fn check_connections(
 /// Listens to each [`Connection`] and consumes any messages from the associated [`TcpStream`].
 /// This message is then dealt with. Each [`NetworkMessage`] is processed using a state machine
 /// structure, which is best suited to the unpredictable nature of the incoming messages.
-async fn recv_state_machine(
-    node: Arc<Node>,
-    sync: Arc<JobSync>,
-    message: NetworkMessage,
+async fn recv_state_machine<T: BlockChainBase>(
+    node: Arc<Node<T>>,
+    sync: Arc<JobSync<T>>,
+    message: NetworkMessage<T>,
 ) -> Result<()> {
     match &message.data {
         MessageData::Event(e) => {
@@ -338,7 +344,7 @@ async fn recv_state_machine(
                         if unlocked_events.len() > 100 {
                             debug!("Building new block");
                             let last_hash = bc_unlocked.last_hash();
-                            let mut block: Block = Block::new(last_hash);
+                            let mut block: Block<T> = Block::new(last_hash);
                             block.add_events(unlocked_events.clone());
                             bc_unlocked.append(block.clone())?;
                             *unlocked_events = Vec::new();
@@ -389,13 +395,13 @@ async fn recv_state_machine(
                 let mut unlocked_loose = node.loose_events.write().await;
                 let dropped = unlocked_loose
                     .drain_filter(|x| b.events.contains(x))
-                    .collect::<Vec<Event>>();
+                    .collect::<Vec<Event<T>>>();
 
                 debug!("Events found to be in block: {:?}", dropped);
 
                 // pass onto other connected nodes
-                let message: NetworkMessage = NetworkMessage::new(MessageData::Block(b.clone()));
-                let process_message: ProcessMessage = ProcessMessage::SendMessage(message);
+                let message: NetworkMessage<T> = NetworkMessage::new(MessageData::Block(b.clone()));
+                let process_message: ProcessMessage<T> = ProcessMessage::SendMessage(message);
                 match sync.sender.send(process_message).await {
                     Ok(_) => {
                         debug!("Added new ProcessMessage to Pipe");
@@ -434,12 +440,12 @@ async fn recv_state_machine(
 ///
 /// Consumes data from pipeline which instructs it to perform certain actions. This could be to
 /// try and create a connection with another member of the network via a [`TcpStream`].
-async fn outgoing_connections(
-    node: Arc<Node>,
+async fn outgoing_connections<T: BlockChainBase>(
+    node: Arc<Node<T>>,
     connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync>,
+    sync: Arc<JobSync<T>>,
 ) -> Result<()> {
-    let mut unsent_q: Vec<ProcessMessage> = Vec::new();
+    let mut unsent_q: Vec<ProcessMessage<T>> = Vec::new();
     loop {
         // Check if there are any jobs in unsent_q
         if unsent_q.len() > 0 {
@@ -454,7 +460,7 @@ async fn outgoing_connections(
             {
                 debug!("Forming connection with: {}", addr);
 
-                create_connection(
+                create_connection::<T>(
                     Arc::clone(&node),
                     String::from(addr),
                     Arc::clone(&connect_pool),
@@ -494,7 +500,7 @@ async fn outgoing_connections(
                     send_all(net_mess.clone(), Arc::clone(&connect_pool)).await
                 }
                 ProcessMessage::NewConnection(addr) => {
-                    create_connection(
+                    create_connection::<T>(
                         Arc::clone(&node),
                         String::from(addr),
                         Arc::clone(&connect_pool),
@@ -511,7 +517,10 @@ async fn outgoing_connections(
 ///
 /// Gets a [`NetworkMessage`] and either floods all connections with the message
 /// that is being sent, or will send it to all connected nodes
-async fn send_all(message: NetworkMessage, connect_pool: Arc<ConnectionPool>) -> Result<()> {
+async fn send_all<T: BlockChainBase>(
+    message: NetworkMessage<T>,
+    connect_pool: Arc<ConnectionPool>,
+) -> Result<()> {
     debug!("Sending message to all connected participants");
     let conn_map = connect_pool.map.read().await;
     for (_, conn) in conn_map.iter() {
@@ -529,8 +538,8 @@ async fn send_all(message: NetworkMessage, connect_pool: Arc<ConnectionPool>) ->
 ///
 /// Function is passed an address and a port and it will attempt to
 /// create a TCP connection with the node at that address
-async fn create_connection(
-    node: Arc<Node>,
+async fn create_connection<T: BlockChainBase>(
+    node: Arc<Node<T>>,
     address: String,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
@@ -539,18 +548,16 @@ async fn create_connection(
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
     // Send initial message with ID
-    let send_mess = NetworkMessage::new(MessageData::InitialID(
-        Data::NewUser {
-            id: node.account.id,
-            pub_key: node.account.pub_key.clone(),
-        },
+    let send_mess = NetworkMessage::<T>::new(MessageData::InitialID(
+        node.account.id,
+        node.account.pub_key.clone(),
         node.account.role,
     ));
     send_message(&mut stream, send_mess).await?;
 
     // Recv initial message with ID
-    let (id, pub_key, role) = match initial_stream_handler(&mut stream).await {
-        Some((Data::NewUser { id, pub_key }, role)) => (id, pub_key, role),
+    let (id, pub_key, role) = match initial_stream_handler::<T>(&mut stream).await {
+        Some((id, pub_key, role)) => (id, pub_key, role),
         _ => return Err(Error::msg("Error getting initial data Message")),
     };
 

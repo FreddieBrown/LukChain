@@ -5,9 +5,10 @@ use crate::blockchain::{
     network::{
         accounts::{Account, Role},
         lookup_run,
-        messages::{MessageData, NetworkMessage},
+        messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},
         participants_run, send_message,
     },
+    Data,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -33,7 +34,7 @@ async fn test_lookup_and_connect() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup_run(Some(8281)).await.unwrap();
+            lookup_run::<Data>(Some(8281)).await.unwrap();
         }),
         lookup_registration,
     );
@@ -45,7 +46,7 @@ async fn test_lookup_and_connect() {
             let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
 
             sleep(Duration::from_millis(100)).await;
-            participants_run(profile, None, Role::User).await
+            participants_run::<Data>(profile, None, Role::User).await
         }),
         part_registration,
     );
@@ -68,22 +69,24 @@ async fn test_lookup_and_connect() {
         let inbound_addr = listener.local_addr().unwrap();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(
             1,
             inbound_addr.to_string(),
             account.role,
         ));
 
-        send_message(&mut stream, reg_message).await.unwrap();
+        send_message::<Data>(&mut stream, reg_message)
+            .await
+            .unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
 
         assert!(matches!(recv_message.data, MessageData::Confirm));
 
-        let finish_message = NetworkMessage::new(MessageData::Finish);
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
 
         // StartUp Listener and wait for partcipant to connect
@@ -92,7 +95,7 @@ async fn test_lookup_and_connect() {
             // Accept initial ID Message
             let mut buffer = [0_u8; 4096];
             match NetworkMessage::from_stream(&mut inbound, &mut buffer).await {
-                Ok(m) => assert!(matches!(m.data, MessageData::InitialID(_, _))),
+                Ok(m) => assert!(matches!(m.data, MessageData::<Data>::InitialID(_, _, _))),
                 _ => assert!(false),
             };
         }

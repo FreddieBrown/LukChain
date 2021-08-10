@@ -16,9 +16,12 @@ pub use self::{
     connections::{Connection, ConnectionPool},
     jobsync::JobSync,
     lookup::lookup_run,
+    messages::traits::{ReadLengthPrefix, WriteLengthPrefix},
     nodes::Node,
     participants::participants_run,
 };
+
+use crate::blockchain::BlockChainBase;
 
 use anyhow::Result;
 use tokio::io::AsyncWriteExt;
@@ -29,9 +32,9 @@ use tracing::debug;
 ///
 /// Takes in a new [`NetworkMessage`] and distributes it to a [`Connection`] in the
 /// [`ConnectionPool`] so they are aware of the information which is bein spread.
-pub(crate) async fn send_message(
+pub(crate) async fn send_message<T: BlockChainBase>(
     stream: &mut TcpStream,
-    message: messages::NetworkMessage,
+    message: messages::NetworkMessage<T>,
 ) -> Result<()> {
     debug!("Sending Message: {:?}", &message);
     let bytes_message = message.as_bytes();

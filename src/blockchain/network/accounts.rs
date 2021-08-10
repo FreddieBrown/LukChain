@@ -1,6 +1,6 @@
 //! Information about the participant needed for network participation
 
-use crate::blockchain::{config::Profile, Data, Event};
+use crate::blockchain::{config::Profile, BlockChainBase, Event};
 
 use std::str::FromStr;
 
@@ -58,14 +58,14 @@ impl Account {
         }
     }
 
-    pub fn new_event(&self, data: Data) -> Event {
+    pub fn new_event<T: BlockChainBase>(&self, data: T) -> Event<T> {
         debug!("New Event: {:?}", data);
         let mut event = Event::new(self.id, data);
         self.sign_event(&mut event);
         event
     }
 
-    pub fn sign_event(&self, event: &mut Event) {
+    pub fn sign_event<T: BlockChainBase>(&self, event: &mut Event<T>) {
         debug!("Signing Event: {:?}", event);
 
         let bytes = event.calculate_hash();

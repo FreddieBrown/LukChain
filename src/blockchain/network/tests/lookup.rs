@@ -1,8 +1,11 @@
-use crate::blockchain::network::{
-    accounts::Role,
-    lookup::lookup_run,
-    messages::{MessageData, NetworkMessage},
-    send_message,
+use crate::blockchain::{
+    network::{
+        accounts::Role,
+        lookup::lookup_run,
+        messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},
+        send_message,
+    },
+    Data,
 };
 
 use futures::future::{AbortHandle, Abortable};
@@ -23,7 +26,7 @@ async fn test_lookup_registration() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup_run(Some(8181)).await.unwrap();
+            lookup_run::<Data>(Some(8181)).await.unwrap();
         }),
         abort_registration,
     );
@@ -37,17 +40,17 @@ async fn test_lookup_registration() {
         let own_addr = stream.local_addr().unwrap().to_string();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(1, own_addr, role));
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(1, own_addr, role));
 
         send_message(&mut stream, reg_message).await.unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
 
-        let finish_message = NetworkMessage::new(MessageData::Finish);
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
     })
     .await
@@ -64,7 +67,7 @@ async fn test_lookup_request_less_than_4() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup_run(Some(8182)).await.unwrap();
+            lookup_run::<Data>(Some(8182)).await.unwrap();
         }),
         abort_registration,
     );
@@ -84,21 +87,23 @@ async fn test_lookup_request_less_than_4() {
         let own_addr = stream.local_addr().unwrap().to_string();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(id, own_addr, role));
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message(&mut stream, reg_message).await.unwrap();
+        send_message::<Data>(&mut stream, reg_message)
+            .await
+            .unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
 
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::new(MessageData::GeneralAddrRequest);
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest);
         send_message(&mut stream, lookup_msg).await.unwrap();
 
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
 
@@ -111,7 +116,7 @@ async fn test_lookup_request_less_than_4() {
             _ => assert!(false),
         };
 
-        let finish_message = NetworkMessage::new(MessageData::Finish);
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
     })
     .await
@@ -128,7 +133,7 @@ async fn test_lookup_request_4() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup_run(Some(8183)).await.unwrap();
+            lookup_run::<Data>(Some(8183)).await.unwrap();
         }),
         abort_registration,
     );
@@ -167,21 +172,23 @@ async fn test_lookup_request_4() {
         let own_addr = stream.local_addr().unwrap().to_string();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(id, own_addr, role));
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message(&mut stream, reg_message).await.unwrap();
+        send_message::<Data>(&mut stream, reg_message)
+            .await
+            .unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::new(MessageData::GeneralAddrRequest);
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest);
         send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
 
@@ -193,7 +200,7 @@ async fn test_lookup_request_4() {
             }
             _ => assert!(false),
         };
-        let finish_message = NetworkMessage::new(MessageData::Finish);
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
     })
     .await
@@ -210,7 +217,7 @@ async fn test_lookup_when_empty() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup_run(Some(8184)).await.unwrap();
+            lookup_run::<Data>(Some(8184)).await.unwrap();
         }),
         abort_registration,
     );
@@ -225,26 +232,28 @@ async fn test_lookup_when_empty() {
         let own_addr = stream.local_addr().unwrap().to_string();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(id, own_addr, role));
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message(&mut stream, reg_message).await.unwrap();
+        send_message::<Data>(&mut stream, reg_message)
+            .await
+            .unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::new(MessageData::GeneralAddrRequest);
-        send_message(&mut stream, lookup_msg).await.unwrap();
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest);
+        send_message::<Data>(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         // Assert return is NoAddr
         assert!(matches!(recv_message.data, MessageData::NoAddr));
-        let finish_message = NetworkMessage::new(MessageData::Finish);
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
     })
     .await
@@ -261,7 +270,7 @@ async fn test_lookup_request_1() {
     let _future = Abortable::new(
         tokio::spawn(async move {
             // Startup LookUp Node
-            lookup_run(Some(8185)).await.unwrap();
+            lookup_run::<Data>(Some(8185)).await.unwrap();
         }),
         abort_registration,
     );
@@ -281,28 +290,32 @@ async fn test_lookup_request_1() {
         let own_addr = stream.local_addr().unwrap().to_string();
 
         // Register details
-        let reg_message = NetworkMessage::new(MessageData::LookUpReg(id, own_addr, role));
+        let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message(&mut stream, reg_message).await.unwrap();
+        send_message::<Data>(&mut stream, reg_message)
+            .await
+            .unwrap();
 
         // If get back correct message, end connection
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::new(MessageData::RequestAddress(1));
-        send_message(&mut stream, lookup_msg).await.unwrap();
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::RequestAddress(1));
+        send_message::<Data>(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
-        let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+        let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
             .await
             .unwrap();
         // Assert return is NoAddr
         assert!(matches!(recv_message.data, MessageData::PeerAddress(_)));
 
-        let finish_message = NetworkMessage::new(MessageData::Finish);
-        send_message(&mut stream, finish_message).await.unwrap();
+        let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
+        send_message::<Data>(&mut stream, finish_message)
+            .await
+            .unwrap();
     })
     .await
     .unwrap();
@@ -319,16 +332,20 @@ async fn connect_test(id: u128, lookup_addr: String) {
     let own_addr = stream.local_addr().unwrap().to_string();
 
     // Register details
-    let reg_message = NetworkMessage::new(MessageData::LookUpReg(id, own_addr, role));
+    let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-    send_message(&mut stream, reg_message).await.unwrap();
+    send_message::<Data>(&mut stream, reg_message)
+        .await
+        .unwrap();
 
     // If get back correct message, end connection
-    let recv_message = NetworkMessage::from_stream(&mut stream, &mut buffer)
+    let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
         .await
         .unwrap();
     assert!(matches!(recv_message.data, MessageData::Confirm));
 
-    let finish_message = NetworkMessage::new(MessageData::Finish);
-    send_message(&mut stream, finish_message).await.unwrap();
+    let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
+    send_message::<Data>(&mut stream, finish_message)
+        .await
+        .unwrap();
 }

@@ -1,7 +1,8 @@
-use crate::blockchain::events::Event;
+use crate::blockchain::{events::Event, BlockChainBase};
 
 use std::cmp::PartialEq;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Error, Result};
@@ -11,24 +12,24 @@ use rand::prelude::*;
 use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct BlockChain {
-    pub chain: Vec<Block>,
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BlockChain<T> {
+    pub chain: Vec<Block<T>>,
     pub users: HashMap<u128, RsaPublicKey>,
     pub created_at: Duration,
-    pending_events: Vec<Event>,
+    pending_events: Vec<Event<T>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Block {
-    pub events: Vec<Event>,
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct Block<T> {
+    pub events: Vec<Event<T>>,
     pub prev_hash: Option<String>,
     pub hash: Option<String>,
     pub nonce: u128,
     pub created_at: Duration,
 }
 
-impl BlockChain {
+impl<T: BlockChainBase> BlockChain<T> {
     /// Creates a new `Blockchain` instance
     pub fn new() -> Self {
         Self {
@@ -51,7 +52,7 @@ impl BlockChain {
     }
 
     /// Adds a new `Block` to the `Blockchain`
-    pub fn append(&mut self, block: Block) -> Result<()> {
+    pub fn append(&mut self, block: Block<T>) -> Result<()> {
         // Validate `Block`
         if !block.verify_hash() {
             return Err(Error::msg("Own hash could not be varified"));
@@ -109,7 +110,7 @@ impl BlockChain {
 
     /// Goes through the [`BlockChain`] and checks if [`Event`]
     /// is already in [`BlockChain`]
-    pub fn contains(&self, event: &Event) -> bool {
+    pub fn contains(&self, event: &Event<T>) -> bool {
         self.chain
             .iter()
             .fold(false, |a, b| (b.events.contains(event)) || a)
@@ -126,7 +127,7 @@ impl BlockChain {
     }
 
     /// Calculates the percentage similarity with compared blockchain
-    pub fn chain_overlap(&self, chain: &BlockChain) -> f64 {
+    pub fn chain_overlap(&self, chain: &BlockChain<T>) -> f64 {
         let mut counter = 0;
         for (base, comp) in self.chain.iter().zip(chain.chain.iter()) {
             if base == comp {
@@ -139,12 +140,12 @@ impl BlockChain {
     }
 
     /// Check if block is in chain
-    pub fn in_chain(&self, block: &Block) -> bool {
+    pub fn in_chain(&self, block: &Block<T>) -> bool {
         self.chain.iter().filter(|b| b == &block).count() > 0
     }
 }
 
-impl Block {
+impl<T: BlockChainBase> Block<T> {
     /// Creates a new `Block`
     pub fn new(prev_hash: Option<String>) -> Self {
         let mut rng = rand::thread_rng();
@@ -159,7 +160,7 @@ impl Block {
         }
     }
 
-    pub fn add_events(&mut self, events: Vec<Event>) {
+    pub fn add_events(&mut self, events: Vec<Event<T>>) {
         self.events = events;
     }
 
@@ -198,7 +199,7 @@ impl Block {
     // Functions for events
 
     /// Adds a event to a `Block`
-    pub fn add_event(&mut self, event: Event) {
+    pub fn add_event(&mut self, event: Event<T>) {
         self.events.push(event);
         self.update_hash();
     }
