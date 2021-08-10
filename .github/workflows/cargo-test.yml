@@ -1,0 +1,29 @@
+name: cargo test
+
+on:
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout branch
+      uses: actions/checkout@v2
+
+    - name: Install latest `rustc`
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        profile: minimal
+        default: true
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v1.2.0
+
+    - name: cargo test
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --manifest-path Cargo.toml
