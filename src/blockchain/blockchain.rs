@@ -69,7 +69,7 @@ impl<T: BlockChainBase> BlockChain<T> {
         // Go through each event and check the data enclosed
         if block.execute(&self.users) {
             // Write back block
-            pair.sync.write_block(block.clone()).await;
+            pair.sync.write_block(block.clone()).await?;
 
             // If valid, append to `Blockchain` and return Ok
             self.chain.push(block);

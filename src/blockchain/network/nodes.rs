@@ -37,7 +37,7 @@ impl<T: BlockChainBase> Node<T> {
         let account = Account::new(Role::Miner, profile);
         let mut initial_bc: BlockChain<T> = BlockChain::new();
         let genesis: Block<T> = Block::new(None);
-        sync.write_block(genesis.clone()).await;
+        sync.write_block(genesis.clone()).await?;
         initial_bc.chain.push(genesis);
         Ok(Self {
             account,

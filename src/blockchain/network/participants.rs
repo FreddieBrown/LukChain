@@ -131,14 +131,10 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
 
                     let process_message = ProcessMessage::NewConnection(addr);
 
-                    match pair.sync.sender.send(process_message).await {
-                        Ok(_) => {
-                            debug!("Added new ProcessMessage to Pipe");
-                            pair.sync.new_permit();
-                            Ok(())
-                        }
-                        _ => Err(Error::msg("Error writing to pipeline")),
-                    }?;
+                    match pair.sync.outbound_channel.0.send(process_message) {
+                        Ok(_) => (),
+                        Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                    };
                 }
             }
             MessageData::NoAddr => {
@@ -353,17 +349,12 @@ async fn recv_state_machine<T: BlockChainBase>(
             };
 
             if let Some(m) = pm {
-                match pair.sync.sender.send(m).await {
-                    Ok(_) => {
-                        debug!("Added new ProcessMessage to Pipe");
-                        pair.sync.new_permit();
-                        Ok(())
-                    }
-                    _ => Err(Error::msg("Error writing to pipeline")),
-                }
-            } else {
-                Ok(())
+                match pair.sync.outbound_channel.0.send(m) {
+                    Ok(_) => (),
+                    Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                };
             }
+            Ok(())
         }
         MessageData::Block(b) => {
             // Check if alreday in Blockchain
@@ -382,14 +373,10 @@ async fn recv_state_machine<T: BlockChainBase>(
                 // pass onto other connected nodes
                 let message: NetworkMessage<T> = NetworkMessage::new(MessageData::Block(b.clone()));
                 let process_message: ProcessMessage<T> = ProcessMessage::SendMessage(message);
-                match pair.sync.sender.send(process_message).await {
-                    Ok(_) => {
-                        debug!("Added new ProcessMessage to Pipe");
-                        pair.sync.new_permit();
-                        Ok(())
-                    }
-                    _ => Err(Error::msg("Error writing to pipeline")),
-                }?;
+                match pair.sync.outbound_channel.0.send(process_message) {
+                    Ok(_) => (),
+                    Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                };
             }
             // Ignore if already in blockchain
 
@@ -461,7 +448,7 @@ async fn outgoing_connections<T: BlockChainBase>(
         .await;
 
         // Read pipeline for new messages
-        let mut rx = pair.sync.receiver.write().await;
+        let mut rx = pair.sync.outbound_channel.1.write().await;
         // When new message comes through pipeline
         if let Some(m) = rx.recv().await {
             debug!("Received message from pipeline: {:?}", &m);

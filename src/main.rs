@@ -1,16 +1,20 @@
 use blockchat::blockchain::{
     config::{Config, Profile},
-    network::{lookup_run, participants_run, Role},
-    Data, UserPair,
+    network::{
+        lookup_run,
+        messages::{MessageData, NetworkMessage, ProcessMessage},
+        participants_run, Role,
+    },
+    Data, Event, UserPair,
 };
 
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::{stdin, stdout, Write};
+use std::io::{self, stdout, Bytes, Read};
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use futures::join;
 use pico_args::Arguments;
 use tracing::info;
@@ -50,6 +54,33 @@ struct AppArgs {
     log_level: Option<log::Level>,
     role: Option<Role>,
     config: Option<usize>,
+}
+
+#[derive(Debug)]
+enum InputCommand {
+    Stop,
+    Quit,
+    None,
+}
+
+impl InputCommand {
+    fn from_input(input: io::Result<u8>) -> InputCommand {
+        if let Ok(key) = input {
+            match key {
+                b'q' | b'Q' => InputCommand::Quit,
+                b's' | b'S' => InputCommand::Stop,
+                _ => InputCommand::None,
+            }
+        } else {
+            InputCommand::None
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum ViewStatus {
+    Running,
+    Finished,
 }
 
 /// main program function
@@ -137,15 +168,22 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
 /// passed back from underlying blockchain to effect higherlevel
 /// application
 pub async fn application_logic(user_pair: Arc<UserPair<Data>>) -> Result<()> {
+    let mut unlocked = user_pair.sync.app_channel.1.write().await;
     loop {
-        user_pair.sync.write_notify.notified().await;
-        {
-            let mut unlocked_read = user_pair.sync.write_back.write().await;
-
-            while unlocked_read.len() > 0 {
-                let block = unlocked_read.remove(0);
-                info!("BLOCK: {:?}", block);
-            }
+        user_pair.sync.app_notify.notified().await;
+        if let Some(block) = unlocked.recv().await {
+            info!("BLOCK: {:?}", block)
         }
+    }
+}
+
+async fn create_and_write(user_pair: Arc<UserPair<Data>>, message: String) -> Result<()> {
+    let process_message = ProcessMessage::SendMessage(NetworkMessage::new(MessageData::Event(
+        Event::new(1, Data::GroupMessage(message)),
+    )));
+
+    match user_pair.sync.outbound_channel.0.send(process_message) {
+        Ok(_) => Ok(()),
+        Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
     }
 }
