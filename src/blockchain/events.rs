@@ -51,9 +51,8 @@ impl<T: BlockChainBase> Event<T> {
     /// Calculate hash of the `Event`
     pub fn calculate_hash(&self) -> Vec<u8> {
         let mut hasher = Sha3::sha3_256();
-        let event_as_string = format!("{}", &self.nonce);
+        let event_as_string = format!("{:?}", (&self.data, &self.nonce));
         hasher.input_str(&event_as_string);
-        hasher.input(&bincode::serialize(&self.data).unwrap());
         return Vec::from(hasher.result_str().as_bytes());
     }
 

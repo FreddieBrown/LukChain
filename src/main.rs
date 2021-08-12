@@ -10,13 +10,13 @@ use blockchat::blockchain::{
 
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::prelude::*;
-use std::io::{self, stdout, Bytes, Read};
+use std::io::Read;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use futures::join;
 use pico_args::Arguments;
+use tokio::time::{sleep, Duration};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -54,33 +54,6 @@ struct AppArgs {
     log_level: Option<log::Level>,
     role: Option<Role>,
     config: Option<usize>,
-}
-
-#[derive(Debug)]
-enum InputCommand {
-    Stop,
-    Quit,
-    None,
-}
-
-impl InputCommand {
-    fn from_input(input: io::Result<u8>) -> InputCommand {
-        if let Ok(key) = input {
-            match key {
-                b'q' | b'Q' => InputCommand::Quit,
-                b's' | b'S' => InputCommand::Stop,
-                _ => InputCommand::None,
-            }
-        } else {
-            InputCommand::None
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-enum ViewStatus {
-    Running,
-    Finished,
 }
 
 /// main program function
@@ -168,6 +141,19 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
 /// passed back from underlying blockchain to effect higherlevel
 /// application
 pub async fn application_logic(user_pair: Arc<UserPair<Data>>) -> Result<()> {
+    let up_cpy = Arc::clone(&user_pair);
+    let _fut = tokio::spawn(async move {
+        loop {
+            // Random sleep
+            sleep(Duration::from_millis(1000)).await;
+            // Create message
+            let message = String::from("Hello");
+            // Write to outbound
+            create_and_write(Arc::clone(&up_cpy), message)
+                .await
+                .unwrap();
+        }
+    });
     let mut unlocked = user_pair.sync.app_channel.1.write().await;
     loop {
         user_pair.sync.app_notify.notified().await;
@@ -179,11 +165,15 @@ pub async fn application_logic(user_pair: Arc<UserPair<Data>>) -> Result<()> {
 
 async fn create_and_write(user_pair: Arc<UserPair<Data>>, message: String) -> Result<()> {
     let process_message = ProcessMessage::SendMessage(NetworkMessage::new(MessageData::Event(
-        Event::new(1, Data::GroupMessage(message)),
+        Event::new(user_pair.node.account.id, Data::GroupMessage(message)),
     )));
 
+    info!("CREATING MESSAGE TO SEND");
+
     match user_pair.sync.outbound_channel.0.send(process_message) {
-        Ok(_) => Ok(()),
+        Ok(_) => user_pair.sync.new_permit(),
         Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
     }
+
+    Ok(())
 }

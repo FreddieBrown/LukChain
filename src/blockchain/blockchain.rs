@@ -31,7 +31,7 @@ pub struct Block<T> {
 }
 
 impl<T: BlockChainBase> BlockChain<T> {
-    /// Creates a new `Blockchain` instance
+    /// Creates a new [`Blockchain`] instance
     pub fn new() -> Self {
         Self {
             chain: Vec::new(),
@@ -43,7 +43,7 @@ impl<T: BlockChainBase> BlockChain<T> {
         }
     }
 
-    /// Gets the hash of the most recent `Block` in the chain
+    /// Gets the hash of the most recent [`Block`] in the chain
     pub fn last_hash(&self) -> Option<String> {
         if self.chain.len() == 0 {
             return None;
@@ -57,7 +57,7 @@ impl<T: BlockChainBase> BlockChain<T> {
     /// [`id`] is the ID of the user who is in charge of the local instance of the
     /// [`BlockChain`]
     pub async fn append(&mut self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
-        // Validate `Block`
+        // Validate [`Block`]
         if !block.verify_hash() {
             return Err(Error::msg("Own hash could not be varified"));
         }
@@ -78,7 +78,7 @@ impl<T: BlockChainBase> BlockChain<T> {
         Ok(())
     }
 
-    /// Goes through the `Blockchain` and validates it
+    /// Goes through the [`Blockchain`] and validates it
     pub fn validate_chain(&self) -> Result<()> {
         for (i, block) in self.chain.iter().enumerate() {
             if !block.verify_hash() {
@@ -145,7 +145,7 @@ impl<T: BlockChainBase> BlockChain<T> {
 }
 
 impl<T: BlockChainBase> Block<T> {
-    /// Creates a new `Block`
+    /// Creates a new [`Block`]
     pub fn new(prev_hash: Option<String>) -> Self {
         let mut rng = rand::thread_rng();
         Self {
@@ -161,9 +161,10 @@ impl<T: BlockChainBase> Block<T> {
 
     pub fn add_events(&mut self, events: Vec<Event<T>>) {
         self.events = events;
+        self.hash = Some(self.calculate_hash());
     }
 
-    /// Sets the nonce of the `Block`
+    /// Sets the nonce of the [`Block`]
     pub fn set_nonce(&mut self, nonce: u128) {
         self.nonce = nonce;
         self.update_hash();
@@ -171,7 +172,7 @@ impl<T: BlockChainBase> Block<T> {
 
     // Cryptographic functions
 
-    /// Calculates the hash of a given `Block`
+    /// Calculates the hash of a given [`Block`]
     pub fn calculate_hash(&self) -> String {
         let mut hasher = Sha3::sha3_256();
 
@@ -185,25 +186,25 @@ impl<T: BlockChainBase> Block<T> {
         return hasher.result_str();
     }
 
-    /// Updates the hash of a given `Block`
+    /// Updates the hash of a given [`Block`]
     pub fn update_hash(&mut self) {
         self.hash = Some(self.calculate_hash());
     }
 
-    /// Verifies the hash of the `Block`
+    /// Verifies the hash of the [`Block`]
     pub fn verify_hash(&self) -> bool {
         self.hash.is_some() && self.hash.as_ref().unwrap().eq(&self.calculate_hash())
     }
 
     // Functions for events
 
-    /// Adds a event to a `Block`
+    /// Adds a event to a [`Block`]
     pub fn add_event(&mut self, event: Event<T>) {
         self.events.push(event);
         self.update_hash();
     }
 
-    /// Gets the number of events in a given `Block`
+    /// Gets the number of events in a given [`Block`]
     pub fn get_event_count(&self) -> usize {
         self.events.len()
     }

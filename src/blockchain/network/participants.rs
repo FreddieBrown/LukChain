@@ -3,7 +3,7 @@
 use crate::blockchain::{
     network::{
         accounts::Role,
-        connections::{Connection, ConnectionPool},
+        connections::{Connection, ConnectionPool, Halves},
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage, ProcessMessage},
         send_message,
     },
@@ -102,7 +102,7 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
         pair.node.account.role,
     ));
 
-    send_message::<T>(&mut stream, reg_message).await?;
+    send_message(&mut stream, reg_message).await?;
 
     debug!("Sent Reg Message");
 
@@ -115,7 +115,7 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
         // Create general request message and send over stream
         let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest);
 
-        send_message::<T>(&mut stream, gen_req).await?;
+        send_message(&mut stream, gen_req).await?;
 
         debug!("Sent Message");
 
@@ -132,7 +132,7 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
                     let process_message = ProcessMessage::NewConnection(addr);
 
                     match pair.sync.outbound_channel.0.send(process_message) {
-                        Ok(_) => (),
+                        Ok(_) => pair.sync.new_permit(),
                         Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
                     };
                 }
@@ -260,12 +260,12 @@ async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
         let conns = connect_pool.map.read().await;
 
         for (_, conn) in conns.iter() {
-            let stream_lock = conn.get_tcp();
+            let stream_lock: Arc<Halves> = conn.get_tcp();
 
             let pair_cp = Arc::clone(&pair);
 
             task::spawn(async move {
-                let mut stream = stream_lock.write().await;
+                let mut stream = stream_lock.read.write().await;
                 let mut buffer = [0_u8; 4096];
 
                 // Check to see if connection has a message
@@ -317,7 +317,12 @@ async fn recv_state_machine<T: BlockChainBase>(
                         unlocked_events.push(e.clone());
                         // if Vec over threshold size, build block and empty loose_events
                         // TODO: Abstract out threshold size
-                        if unlocked_events.len() > 100 {
+                        let thresh: usize = match pair.node.account.profile.block_size {
+                            Some(s) => s,
+                            None => 100,
+                        };
+
+                        if unlocked_events.len() >= thresh {
                             debug!("Building new block");
                             let last_hash = bc_unlocked.last_hash();
                             let mut block: Block<T> = Block::new(last_hash);
@@ -350,7 +355,7 @@ async fn recv_state_machine<T: BlockChainBase>(
 
             if let Some(m) = pm {
                 match pair.sync.outbound_channel.0.send(m) {
-                    Ok(_) => (),
+                    Ok(_) => pair.sync.new_permit(),
                     Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
                 };
             }
@@ -374,7 +379,7 @@ async fn recv_state_machine<T: BlockChainBase>(
                 let message: NetworkMessage<T> = NetworkMessage::new(MessageData::Block(b.clone()));
                 let process_message: ProcessMessage<T> = ProcessMessage::SendMessage(message);
                 match pair.sync.outbound_channel.0.send(process_message) {
-                    Ok(_) => (),
+                    Ok(_) => pair.sync.new_permit(),
                     Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
                 };
             }
@@ -414,6 +419,7 @@ async fn outgoing_connections<T: BlockChainBase>(
     let mut unsent_q: Vec<ProcessMessage<T>> = Vec::new();
     loop {
         // Check if there are any jobs in unsent_q
+        info!("CHECKING IF");
         if unsent_q.len() > 0 {
             debug!("Getting ProcessMessage from Queue");
 
@@ -438,15 +444,17 @@ async fn outgoing_connections<T: BlockChainBase>(
                 unsent_q.remove(i);
             }
         }
+        info!("CHECKING PERMIT");
         // Wait until there is something in the pipeline
         pair.sync.claim_permit().await;
+        info!("CLAIMED PERMIT");
 
         let num_conns: usize = async {
             let unlocked_map = connect_pool.map.read().await;
             unlocked_map.len()
         }
         .await;
-
+        debug!("NUMBER OF CONNS: {}", num_conns);
         // Read pipeline for new messages
         let mut rx = pair.sync.outbound_channel.1.write().await;
         // When new message comes through pipeline
@@ -476,6 +484,7 @@ async fn outgoing_connections<T: BlockChainBase>(
                 _ => unreachable!(),
             }?
         }
+        info!("AFTER IF");
     }
 }
 
@@ -491,9 +500,9 @@ async fn send_all<T: BlockChainBase>(
     let conn_map = connect_pool.map.read().await;
     for (_, conn) in conn_map.iter() {
         let tcp = conn.get_tcp();
-        let mut stream = tcp.write().await;
+        let mut stream = tcp.write.write().await;
 
-        debug!("Sending message to: {:?}", stream.peer_addr());
+        debug!("Sending message to: {:?}", tcp.addr);
 
         send_message(stream.deref_mut(), message.clone()).await?;
     }
