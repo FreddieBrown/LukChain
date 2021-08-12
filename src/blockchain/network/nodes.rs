@@ -2,11 +2,15 @@
 
 use crate::blockchain::{
     config::Profile,
-    network::accounts::{Account, Role},
-    Block, BlockChain, BlockChainBase, Event,
+    network::{
+        accounts::{Account, Role},
+        JobSync,
+    },
+    Block, BlockChain, BlockChainBase, Event, UserPair,
 };
 
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::sync::RwLock;
@@ -20,24 +24,21 @@ pub struct Node<T: BlockChainBase> {
 }
 
 impl<T: BlockChainBase> Node<T> {
-    pub fn new(role: Role, profile: Profile) -> Result<Self> {
-        if matches!(role, Role::Miner) {
-            Self::genesis(profile)
-        } else {
-            Ok(Self {
-                account: Account::new(role, profile),
-                blockchain: RwLock::new(BlockChain::new()),
-                loose_events: RwLock::new(Vec::new()),
-            })
+    pub fn new(role: Role, profile: Profile) -> Self {
+        Self {
+            account: Account::new(role, profile),
+            blockchain: RwLock::new(BlockChain::new()),
+            loose_events: RwLock::new(Vec::new()),
         }
     }
 
     /// Function to create a blockchain with a genesis block
-    fn genesis(profile: Profile) -> Result<Self> {
+    pub async fn genesis(profile: Profile, sync: &JobSync<T>) -> Result<Self> {
         let account = Account::new(Role::Miner, profile);
         let mut initial_bc: BlockChain<T> = BlockChain::new();
         let genesis: Block<T> = Block::new(None);
-        initial_bc.append(genesis, &account.priv_key, account.id)?;
+        sync.write_block(genesis.clone()).await;
+        initial_bc.chain.push(genesis);
         Ok(Self {
             account,
             blockchain: RwLock::new(initial_bc),
@@ -64,8 +65,8 @@ impl<T: BlockChainBase> Node<T> {
     }
 
     /// Adds a [`Block`] to the underlying [`BlockChain`]
-    pub async fn add_block(&self, block: Block<T>) -> Result<()> {
+    pub async fn add_block(&self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
         let mut unlocked = self.blockchain.write().await;
-        unlocked.append(block, &self.account.priv_key, self.account.id)
+        unlocked.append(block, pair).await
     }
 }

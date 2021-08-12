@@ -8,10 +8,11 @@ use crate::blockchain::{
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},
         participants_run, send_message,
     },
-    Data,
+    Data, UserPair,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::Arc;
 
 use futures::future::{AbortHandle, Abortable};
 use tokio::net::{TcpListener, TcpStream};
@@ -46,7 +47,9 @@ async fn test_lookup_and_connect() {
             let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
 
             sleep(Duration::from_millis(100)).await;
-            participants_run::<Data>(profile, None, Role::User, false, None).await
+            let pair: Arc<UserPair<Data>> =
+                Arc::new(UserPair::new(Role::User, profile, false).await?);
+            participants_run::<Data>(pair, None).await
         }),
         part_registration,
     );

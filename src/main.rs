@@ -1,14 +1,17 @@
 use blockchat::blockchain::{
     config::{Config, Profile},
     network::{lookup_run, participants_run, Role},
-    Data,
+    Data, UserPair,
 };
 
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::{stdin, stdout, Write};
+use std::sync::Arc;
 
 use anyhow::Result;
+use futures::join;
 use pico_args::Arguments;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -106,33 +109,43 @@ async fn main() {
     run(chosen_role, profile).await.unwrap();
 }
 
+/// main.rs run function
 pub async fn run(role: Role, profile: Profile) -> Result<()> {
     info!("Input Profile: {:?}", &profile);
 
     match role {
         Role::LookUp => {
             // Start Lookup server functionality
-            lookup_run::<Data>(Some(8181)).await
+            lookup_run::<Data>(Some(8181)).await?
         }
         _ => {
-            participants_run::<Data>(
-                profile,
-                None,
-                role,
-                true,
-                Some(|x| loop {
-                    futures::executor::block_on(x.write_notify.notified());
-                    {
-                        let mut unlocked_read = futures::executor::block_on(x.write_back.write());
+            let pair: Arc<UserPair<Data>> = Arc::new(UserPair::new(role, profile, true).await?);
+            let part_fut = participants_run::<Data>(Arc::clone(&pair), None);
+            let app_fut = application_logic(Arc::clone(&pair));
+            match join!(part_fut, app_fut) {
+                (Ok(_), Err(e)) => println!("Error: {}", e),
+                (Err(e), Ok(_)) => println!("Error: {}", e),
+                (Err(e1), Err(e2)) => println!("Errors: {} and {}", e1, e2),
+                _ => println!("Everything is fine :)"),
+            }
+        }
+    }
+    Ok(())
+}
 
-                        while unlocked_read.len() > 0 {
-                            let message = unlocked_read.remove(0);
-                            println!("MESSAGE: {:?}", message);
-                        }
-                    }
-                }),
-            )
-            .await
+/// Application logic. Highest point in application. Uses the data
+/// passed back from underlying blockchain to effect higherlevel
+/// application
+pub async fn application_logic(user_pair: Arc<UserPair<Data>>) -> Result<()> {
+    loop {
+        user_pair.sync.write_notify.notified().await;
+        {
+            let mut unlocked_read = user_pair.sync.write_back.write().await;
+
+            while unlocked_read.len() > 0 {
+                let block = unlocked_read.remove(0);
+                info!("BLOCK: {:?}", block);
+            }
         }
     }
 }

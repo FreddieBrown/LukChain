@@ -1,15 +1,16 @@
-use crate::blockchain::{events::Event, BlockChainBase};
+use crate::blockchain::{events::Event, BlockChainBase, UserPair};
 
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
-use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -55,7 +56,7 @@ impl<T: BlockChainBase> BlockChain<T> {
     ///
     /// [`id`] is the ID of the user who is in charge of the local instance of the
     /// [`BlockChain`]
-    pub fn append(&mut self, block: Block<T>, priv_key: &RsaPrivateKey, id: u128) -> Result<()> {
+    pub async fn append(&mut self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
         // Validate `Block`
         if !block.verify_hash() {
             return Err(Error::msg("Own hash could not be varified"));
@@ -65,19 +66,14 @@ impl<T: BlockChainBase> BlockChain<T> {
             return Err(Error::msg("Invalid prev_hash stored in block"));
         }
 
-        // TODO: Check for nonces that have already been used
-
         // Go through each event and check the data enclosed
-        for event in block.events.iter() {
-            if self.users.contains_key(&event.made_by) {
-                event.execute(priv_key, self.users.get(&event.made_by), id);
-            } else {
-                event.execute(priv_key, None, id);
-            }
-        }
+        if block.execute(&self.users) {
+            // Write back block
+            pair.sync.write_block(block.clone()).await;
 
-        // If valid, append to `Blockchain` and return Ok
-        self.chain.push(block);
+            // If valid, append to `Blockchain` and return Ok
+            self.chain.push(block);
+        }
 
         Ok(())
     }
@@ -210,5 +206,18 @@ impl<T: BlockChainBase> Block<T> {
     /// Gets the number of events in a given `Block`
     pub fn get_event_count(&self) -> usize {
         self.events.len()
+    }
+
+    pub fn execute(&self, users: &HashMap<u128, RsaPublicKey>) -> bool {
+        // TODO: Check for nonces that have already been used
+        self.events.iter().fold(true, |acc, event| {
+            acc && {
+                if users.contains_key(&event.made_by) {
+                    event.execute(users.get(&event.made_by))
+                } else {
+                    event.execute(None)
+                }
+            }
+        })
     }
 }

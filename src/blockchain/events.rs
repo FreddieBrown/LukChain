@@ -7,9 +7,8 @@ use std::time::{Duration, SystemTime};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
-use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
+use rsa::{PaddingScheme, PublicKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 /// Events that are stored on [`BlockChain`]
 ///
@@ -52,25 +51,20 @@ impl<T: BlockChainBase> Event<T> {
     /// Calculate hash of the `Event`
     pub fn calculate_hash(&self) -> Vec<u8> {
         let mut hasher = Sha3::sha3_256();
-        let event_as_string = format!("{:?}", (&self.data, &self.nonce));
+        let event_as_string = format!("{}", &self.nonce);
         hasher.input_str(&event_as_string);
+        hasher.input(&bincode::serialize(&self.data).unwrap());
         return Vec::from(hasher.result_str().as_bytes());
     }
 
-    pub fn execute(
-        &self,
-        priv_key: &RsaPrivateKey,
-        foreign_pub_key: Option<&RsaPublicKey>,
-        id: u128,
-    ) {
-        self.data.execute(priv_key, id);
+    pub fn execute(&self, foreign_pub_key: Option<&RsaPublicKey>) -> bool {
+        // self.data.execute(priv_key, id);
+        // Write back data to app logic
 
         if self.signature.is_some() {
-            if self.verify_sign(foreign_pub_key.unwrap()) {
-                debug!("Message correctly signed");
-            } else {
-                debug!("Message incorrectly signed");
-            }
+            self.verify_sign(foreign_pub_key.unwrap())
+        } else {
+            true
         }
     }
 
@@ -92,26 +86,4 @@ impl<T: BlockChainBase> Event<T> {
     }
 }
 
-impl BlockChainBase for Data {
-    fn execute(&self, priv_key: &RsaPrivateKey, own_id: u128) {
-        match self {
-            Data::IndividualMessage(id, encrypted) => {
-                // Change so if this is our ID, we can decrypt it
-                if &own_id == id {
-                    let padding = PaddingScheme::new_pkcs1v15_encrypt();
-                    let decrypted = priv_key
-                        .decrypt(padding, &encrypted)
-                        .expect("failed to decrypt");
-                    debug!(
-                        "DECRYPTED MESSAGE: {}",
-                        String::from_utf8(decrypted).unwrap()
-                    );
-                } else {
-                    debug!("ENCRYPTED MESSAGE");
-                }
-            }
-            Data::GroupMessage(m) => debug!("MESSAGE: {}", m),
-            Data::NewUser { id, .. } => debug!("NEW USER: {}", id),
-        };
-    }
-}
+impl BlockChainBase for Data {}

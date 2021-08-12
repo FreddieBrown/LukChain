@@ -1,7 +1,4 @@
-use crate::blockchain::{
-    network::messages::{NetworkMessage, ProcessMessage},
-    BlockChainBase,
-};
+use crate::blockchain::{network::messages::ProcessMessage, Block, BlockChainBase};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,7 +17,7 @@ pub struct JobSync<T: BlockChainBase> {
     pub notify: Notify,
     pub sender: Sender<ProcessMessage<T>>,
     pub receiver: RwLock<Receiver<ProcessMessage<T>>>,
-    pub write_back: RwLock<Vec<NetworkMessage<T>>>,
+    pub write_back: RwLock<Vec<Block<T>>>,
     pub write_permission: bool,
     pub write_notify: Notify,
 }
@@ -75,5 +72,13 @@ impl<T: BlockChainBase> JobSync<T> {
             "Claimed permit. Permits left: {}",
             self.permits.load(Ordering::SeqCst)
         );
+    }
+
+    pub async fn write_block(&self, block: Block<T>) {
+        if self.write_permission {
+            let mut wb_unlocked = self.write_back.write().await;
+            wb_unlocked.push(block);
+            self.write_notify.notify_one();
+        }
     }
 }

@@ -2,11 +2,10 @@ use crate::blockchain::{
     config::Profile,
     events::{Data, Event},
     network::{Account, Role},
-    Block, BlockChain,
+    Block, BlockChain, UserPair,
 };
 
-use rand::rngs::OsRng;
-use rsa::RsaPrivateKey;
+use std::sync::Arc;
 
 // Basic tests
 #[test]
@@ -34,15 +33,19 @@ fn add_event_to_block() {
     assert!(block.get_event_count() == 1);
 }
 
-#[test]
-fn add_block_to_blockchain() {
-    let private_key = RsaPrivateKey::new(&mut OsRng, 2048).expect("failed to generate a key");
+#[tokio::test]
+async fn add_block_to_blockchain() {
     let mut bc: BlockChain<Data> = BlockChain::new();
     let mut block: Block<Data> = Block::new(None);
     let event: Event<Data> = Event::new(10, Data::GroupMessage(String::from("Hello")));
+    let pair: Arc<UserPair<Data>> = Arc::new(
+        UserPair::new(Role::User, Profile::new(None, None, None, None), false)
+            .await
+            .unwrap(),
+    );
     block.add_event(event);
     assert!(block.get_event_count() == 1);
-    assert!(bc.append(block, &private_key, 1).is_ok());
+    assert!(bc.append(block, pair).await.is_ok());
     assert!(bc.chain.len() == 1);
 }
 
