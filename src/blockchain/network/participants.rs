@@ -38,7 +38,7 @@ pub async fn participants_run<T: 'static + BlockChainBase>(
     write_back: bool,
     application_runner: Option<fn(Arc<JobSync<T>>)>,
 ) -> Result<()> {
-    let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone()));
+    let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone())?);
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
     let sync: Arc<JobSync<T>> = Arc::new(JobSync::new(write_back));
 
@@ -260,6 +260,11 @@ async fn process_connection<T: 'static + BlockChainBase>(
         node.account.role,
     ));
     send_message(&mut stream, send_mess).await?;
+
+    // Transmit initial bc state
+    let bc_read = node.blockchain.read().await;
+    let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
+    send_message(&mut stream, bc_mess).await?;
 
     let conn = Connection::new(stream, role, Some(pub_key));
     connect_pool.add(conn, id).await;
@@ -582,9 +587,15 @@ async fn create_connection<T: BlockChainBase>(
         _ => return Err(Error::msg("Error getting initial data Message")),
     };
 
+    // Transmit initial bc state
+    let bc_read = node.blockchain.read().await;
+    let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
+    send_message(&mut stream, bc_mess).await?;
+
     // Add to map
     connect_pool
         .add(Connection::new(stream, role, Some(pub_key)), id)
         .await;
+
     Ok(())
 }
