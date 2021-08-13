@@ -1,15 +1,13 @@
 //! Functions to run network participants
 
 use crate::blockchain::{
-    config::Profile,
     network::{
         accounts::Role,
-        connections::{Connection, ConnectionPool},
+        connections::{Connection, ConnectionPool, Halves},
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage, ProcessMessage},
-        nodes::Node,
-        send_message, JobSync,
+        send_message,
     },
-    Block, BlockChainBase, Event,
+    Block, BlockChainBase, Event, UserPair,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -32,14 +30,10 @@ use tracing::{debug, error, info};
 /// logic which can be used to do specific tasks, like create and
 /// send messages to the outgoing thread.
 pub async fn participants_run<T: 'static + BlockChainBase>(
-    profile: Profile,
+    pair: Arc<UserPair<T>>,
     port: Option<u16>,
-    role: Role,
-    application_runner: Option<fn(Arc<JobSync<T>>)>,
 ) -> Result<()> {
-    let node: Arc<Node<T>> = Arc::new(Node::new(role, profile.clone()));
     let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
-    let sync: Arc<JobSync<T>> = Arc::new(JobSync::new(application_runner.is_some()));
 
     // Incoming Connections IP Address
     #[cfg(not(debug_assertions))]
@@ -61,37 +55,21 @@ pub async fn participants_run<T: 'static + BlockChainBase>(
     info!("Participant Address: {:?}", &inbound_addr);
 
     // Talk to LookUp Server and get initial connections
-    if let Some(addr) = profile.lookup_address {
-        match initial_lookup(
-            Arc::clone(&node),
-            Arc::clone(&sync),
-            addr,
-            inbound_addr.to_string(),
-        )
-        .await
-        {
+    if let Some(addr) = pair.node.account.profile.lookup_address.clone() {
+        match initial_lookup(Arc::clone(&pair), addr, inbound_addr.to_string()).await {
             Ok(_) => debug!("Initial Lookup Success"),
             Err(e) => error!("Initial Lookup Error: {}", e),
         };
     }
 
-    let inbound_fut = inbound(
-        Arc::clone(&node),
-        Arc::clone(&connect_pool),
-        Arc::clone(&sync),
-        listener,
-    );
+    let inbound_fut = inbound(Arc::clone(&pair), Arc::clone(&connect_pool), listener);
 
-    let sync_cpy = Arc::clone(&sync);
+    let pair_cpy = Arc::clone(&pair);
     let outgoing_fut = tokio::spawn(async move {
-        outgoing_connections(Arc::clone(&node), Arc::clone(&connect_pool), sync_cpy)
+        outgoing_connections(pair_cpy, Arc::clone(&connect_pool))
             .await
             .unwrap()
     });
-
-    if let Some(f) = application_runner {
-        f(Arc::clone(&sync));
-    }
 
     match join!(inbound_fut, outgoing_fut) {
         (Ok(_), Err(e)) => error!("Error in futures: {}", e),
@@ -109,8 +87,7 @@ pub async fn participants_run<T: 'static + BlockChainBase>(
 /// it to make. It then creates a [`ProcessMessage::NewConnection`] for each
 /// address and puts them into the job queue.
 async fn initial_lookup<T: 'static + BlockChainBase>(
-    node: Arc<Node<T>>,
-    sync: Arc<JobSync<T>>,
+    pair: Arc<UserPair<T>>,
     address: String,
     own_addr: String,
 ) -> Result<()> {
@@ -120,12 +97,12 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
     let reg_message = NetworkMessage::<T>::new(MessageData::LookUpReg(
-        node.account.id,
+        pair.node.account.id,
         own_addr,
-        node.account.role,
+        pair.node.account.role,
     ));
 
-    send_message::<T>(&mut stream, reg_message).await?;
+    send_message(&mut stream, reg_message).await?;
 
     debug!("Sent Reg Message");
 
@@ -138,7 +115,7 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
         // Create general request message and send over stream
         let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest);
 
-        send_message::<T>(&mut stream, gen_req).await?;
+        send_message(&mut stream, gen_req).await?;
 
         debug!("Sent Message");
 
@@ -154,14 +131,10 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
 
                     let process_message = ProcessMessage::NewConnection(addr);
 
-                    match sync.sender.send(process_message).await {
-                        Ok(_) => {
-                            debug!("Added new ProcessMessage to Pipe");
-                            sync.new_permit();
-                            Ok(())
-                        }
-                        _ => Err(Error::msg("Error writing to pipeline")),
-                    }?;
+                    match pair.sync.outbound_channel.0.send(process_message) {
+                        Ok(_) => pair.sync.new_permit(),
+                        Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                    };
                 }
             }
             MessageData::NoAddr => {
@@ -180,29 +153,24 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
 /// Function to start up functions which deal with inbound
 /// connections and message traffic
 async fn inbound<T: 'static + BlockChainBase + Send>(
-    node: Arc<Node<T>>,
+    pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync<T>>,
     listener: TcpListener,
 ) -> Result<()> {
     // Thread to listen for inbound connections (reactive)
     //     Put all connections into connect pool
-    let node_cpy = Arc::clone(&node);
+    let pair_cpy = Arc::clone(&pair);
     let cp_cpy = Arc::clone(&connect_pool);
     task::spawn(async move {
-        incoming_connections(node_cpy, cp_cpy, listener)
+        incoming_connections(pair_cpy, cp_cpy, listener)
             .await
             .unwrap()
     });
     // Thread to go through all connections and deal with incoming messages (reactive)
     task::spawn(async move {
-        check_connections(
-            Arc::clone(&node),
-            Arc::clone(&connect_pool),
-            Arc::clone(&sync),
-        )
-        .await
-        .unwrap()
+        check_connections(Arc::clone(&pair), Arc::clone(&connect_pool))
+            .await
+            .unwrap()
     })
     .await?;
 
@@ -215,17 +183,14 @@ async fn inbound<T: 'static + BlockChainBase + Send>(
 /// participants in the network. Takes the connections and inserts them
 /// into the `connect_pool`.
 async fn incoming_connections<T: 'static + BlockChainBase>(
-    node: Arc<Node<T>>,
+    pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
     listener: TcpListener,
 ) -> Result<()> {
     while let Ok((inbound, _)) = listener.accept().await {
         debug!("New Inbound Connection: {:?}", inbound.peer_addr());
 
-        let cp_cp = Arc::clone(&connect_pool);
-        let node_cp = Arc::clone(&node);
-
-        let fut = process_connection(inbound, node_cp, cp_cp);
+        let fut = process_connection(inbound, Arc::clone(&pair), Arc::clone(&connect_pool));
 
         if let Err(e) = tokio::spawn(async move { fut.await }).await? {
             error!("Error processing connection: {}", e);
@@ -241,7 +206,7 @@ async fn incoming_connections<T: 'static + BlockChainBase>(
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
 async fn process_connection<T: 'static + BlockChainBase>(
     mut stream: TcpStream,
-    node: Arc<Node<T>>,
+    pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     // Get the actual ID of the Connection from the stream
@@ -254,11 +219,16 @@ async fn process_connection<T: 'static + BlockChainBase>(
 
     // Send back initial ID
     let send_mess = NetworkMessage::<T>::new(MessageData::InitialID(
-        node.account.id,
-        node.account.pub_key.clone(),
-        node.account.role,
+        pair.node.account.id,
+        pair.node.account.pub_key.clone(),
+        pair.node.account.role,
     ));
     send_message(&mut stream, send_mess).await?;
+
+    // Transmit initial bc state
+    let bc_read = pair.node.blockchain.read().await;
+    let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
+    send_message(&mut stream, bc_mess).await?;
 
     let conn = Connection::new(stream, role, Some(pub_key));
     connect_pool.add(conn, id).await;
@@ -282,22 +252,20 @@ async fn initial_stream_handler<T: BlockChainBase>(
 
 /// Goes through each [`Connection`] and checks to see if they contain a [`NetworkMessage`]
 async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
-    node: Arc<Node<T>>,
+    pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync<T>>,
 ) -> Result<()> {
     debug!("Checking connections in ConnectionPool");
     loop {
         let conns = connect_pool.map.read().await;
 
         for (_, conn) in conns.iter() {
-            let stream_lock = conn.get_tcp();
+            let stream_lock: Arc<Halves> = conn.get_tcp();
 
-            let node_cp = Arc::clone(&node);
-            let sync_cp = Arc::clone(&sync);
+            let pair_cp = Arc::clone(&pair);
 
             task::spawn(async move {
-                let mut stream = stream_lock.write().await;
+                let mut stream = stream_lock.read.write().await;
                 let mut buffer = [0_u8; 4096];
 
                 // Check to see if connection has a message
@@ -313,7 +281,7 @@ async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
 
                     debug!("New Message: {:?}", &message);
 
-                    recv_state_machine(node_cp, sync_cp, message).await.unwrap();
+                    recv_state_machine(pair_cp, message).await.unwrap();
                 }
                 // if not, move on
             });
@@ -327,19 +295,18 @@ async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
 /// This message is then dealt with. Each [`NetworkMessage`] is processed using a state machine
 /// structure, which is best suited to the unpredictable nature of the incoming messages.
 async fn recv_state_machine<T: BlockChainBase>(
-    node: Arc<Node<T>>,
-    sync: Arc<JobSync<T>>,
+    pair: Arc<UserPair<T>>,
     message: NetworkMessage<T>,
 ) -> Result<()> {
     match &message.data {
         MessageData::Event(e) => {
             // If miner, add it to list of events to build Block
-            let pm = match node.account.role {
+            let pm = match pair.node.account.role {
                 Role::Miner => {
                     debug!("Recv Event: {:?}", e);
-                    let mut unlocked_events = node.loose_events.write().await;
-                    let mut bc_unlocked = node.blockchain.write().await;
-                    let mut ns_unlocked = sync.nonce_set.write().await;
+                    let mut unlocked_events = pair.node.loose_events.write().await;
+                    let mut bc_unlocked = pair.node.blockchain.write().await;
+                    let mut ns_unlocked = pair.sync.nonce_set.write().await;
                     // Check if event is already in loose_events and not in blockchain
                     if !ns_unlocked.contains(&e.nonce)
                         && !unlocked_events.contains(&e)
@@ -350,16 +317,17 @@ async fn recv_state_machine<T: BlockChainBase>(
                         unlocked_events.push(e.clone());
                         // if Vec over threshold size, build block and empty loose_events
                         // TODO: Abstract out threshold size
-                        if unlocked_events.len() > 100 {
+                        let thresh: usize = match pair.node.account.profile.block_size {
+                            Some(s) => s,
+                            None => 100,
+                        };
+
+                        if unlocked_events.len() >= thresh {
                             debug!("Building new block");
                             let last_hash = bc_unlocked.last_hash();
                             let mut block: Block<T> = Block::new(last_hash);
                             block.add_events(unlocked_events.clone());
-                            bc_unlocked.append(
-                                block.clone(),
-                                &node.account.priv_key,
-                                node.account.id,
-                            )?;
+                            bc_unlocked.append(block.clone(), Arc::clone(&pair)).await?;
                             *unlocked_events = Vec::new();
                             ns_unlocked.insert(e.nonce);
                             ns_unlocked.insert(block.nonce);
@@ -375,7 +343,7 @@ async fn recv_state_machine<T: BlockChainBase>(
                 }
                 _ => {
                     // Else, pass onto other connections
-                    let mut ns_unlocked = sync.nonce_set.write().await;
+                    let mut ns_unlocked = pair.sync.nonce_set.write().await;
                     if !ns_unlocked.contains(&e.nonce) {
                         ns_unlocked.insert(e.nonce);
                         Some(ProcessMessage::SendMessage(message.clone()))
@@ -386,33 +354,21 @@ async fn recv_state_machine<T: BlockChainBase>(
             };
 
             if let Some(m) = pm {
-                match sync.sender.send(m).await {
-                    Ok(_) => {
-                        debug!("Added new ProcessMessage to Pipe");
-                        sync.new_permit();
-                        Ok(())
-                    }
-                    _ => Err(Error::msg("Error writing to pipeline")),
-                }
-            } else {
-                Ok(())
+                match pair.sync.outbound_channel.0.send(m) {
+                    Ok(_) => pair.sync.new_permit(),
+                    Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                };
             }
+            Ok(())
         }
         MessageData::Block(b) => {
             // Check if alreday in Blockchain
             // If not in blockchain (and is valid),
-            if !node.in_chain(&b).await {
+            if !pair.node.in_chain(&b).await {
                 // add to blockchain
-                node.add_block(b.clone()).await?;
-                if sync.write_permission {
-                    // Write message to buffer
-                    let mut unlock_write_back = sync.write_back.write().await;
-                    unlock_write_back.push(message.clone());
-                    // Increase number of permits
-                    sync.write_notify.notify_one();
-                }
+                pair.node.add_block(b.clone(), Arc::clone(&pair)).await?;
                 // TODO: Go through loose events and remove any which are in block
-                let mut unlocked_loose = node.loose_events.write().await;
+                let mut unlocked_loose = pair.node.loose_events.write().await;
                 let dropped = unlocked_loose
                     .drain_filter(|x| b.events.contains(x))
                     .collect::<Vec<Event<T>>>();
@@ -422,14 +378,10 @@ async fn recv_state_machine<T: BlockChainBase>(
                 // pass onto other connected nodes
                 let message: NetworkMessage<T> = NetworkMessage::new(MessageData::Block(b.clone()));
                 let process_message: ProcessMessage<T> = ProcessMessage::SendMessage(message);
-                match sync.sender.send(process_message).await {
-                    Ok(_) => {
-                        debug!("Added new ProcessMessage to Pipe");
-                        sync.new_permit();
-                        Ok(())
-                    }
-                    _ => Err(Error::msg("Error writing to pipeline")),
-                }?;
+                match pair.sync.outbound_channel.0.send(process_message) {
+                    Ok(_) => pair.sync.new_permit(),
+                    Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                };
             }
             // Ignore if already in blockchain
 
@@ -441,10 +393,10 @@ async fn recv_state_machine<T: BlockChainBase>(
             if bc.validate_chain().is_ok() {
                 debug!("New blockchain is valid");
                 // If valid, check if it is a subchain of current blockchain
-                if bc.len() > node.bc_len().await && node.chain_overlap(&bc).await > 0.5 {
+                if bc.len() > pair.node.bc_len().await && pair.node.chain_overlap(&bc).await > 0.5 {
                     // If longer and contains more than half of original chain, replace
                     info!("New blockchain received, old Blockchain replaced");
-                    let mut bc_unlocked = node.blockchain.write().await;
+                    let mut bc_unlocked = pair.node.blockchain.write().await;
                     *bc_unlocked = bc.clone();
                 }
                 // If shorter, ignore
@@ -461,13 +413,13 @@ async fn recv_state_machine<T: BlockChainBase>(
 /// Consumes data from pipeline which instructs it to perform certain actions. This could be to
 /// try and create a connection with another member of the network via a [`TcpStream`].
 async fn outgoing_connections<T: BlockChainBase>(
-    node: Arc<Node<T>>,
+    pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
-    sync: Arc<JobSync<T>>,
 ) -> Result<()> {
     let mut unsent_q: Vec<ProcessMessage<T>> = Vec::new();
     loop {
         // Check if there are any jobs in unsent_q
+        info!("CHECKING IF");
         if unsent_q.len() > 0 {
             debug!("Getting ProcessMessage from Queue");
 
@@ -481,7 +433,7 @@ async fn outgoing_connections<T: BlockChainBase>(
                 debug!("Forming connection with: {}", addr);
 
                 create_connection::<T>(
-                    Arc::clone(&node),
+                    Arc::clone(&pair),
                     String::from(addr),
                     Arc::clone(&connect_pool),
                 )
@@ -492,17 +444,19 @@ async fn outgoing_connections<T: BlockChainBase>(
                 unsent_q.remove(i);
             }
         }
+        info!("CHECKING PERMIT");
         // Wait until there is something in the pipeline
-        sync.claim_permit().await;
+        pair.sync.claim_permit().await;
+        info!("CLAIMED PERMIT");
 
         let num_conns: usize = async {
             let unlocked_map = connect_pool.map.read().await;
             unlocked_map.len()
         }
         .await;
-
+        debug!("NUMBER OF CONNS: {}", num_conns);
         // Read pipeline for new messages
-        let mut rx = sync.receiver.write().await;
+        let mut rx = pair.sync.outbound_channel.1.write().await;
         // When new message comes through pipeline
         if let Some(m) = rx.recv().await {
             debug!("Received message from pipeline: {:?}", &m);
@@ -521,7 +475,7 @@ async fn outgoing_connections<T: BlockChainBase>(
                 }
                 ProcessMessage::NewConnection(addr) => {
                     create_connection::<T>(
-                        Arc::clone(&node),
+                        Arc::clone(&pair),
                         String::from(addr),
                         Arc::clone(&connect_pool),
                     )
@@ -530,6 +484,7 @@ async fn outgoing_connections<T: BlockChainBase>(
                 _ => unreachable!(),
             }?
         }
+        info!("AFTER IF");
     }
 }
 
@@ -545,9 +500,9 @@ async fn send_all<T: BlockChainBase>(
     let conn_map = connect_pool.map.read().await;
     for (_, conn) in conn_map.iter() {
         let tcp = conn.get_tcp();
-        let mut stream = tcp.write().await;
+        let mut stream = tcp.write.write().await;
 
-        debug!("Sending message to: {:?}", stream.peer_addr());
+        debug!("Sending message to: {:?}", tcp.addr);
 
         send_message(stream.deref_mut(), message.clone()).await?;
     }
@@ -559,7 +514,7 @@ async fn send_all<T: BlockChainBase>(
 /// Function is passed an address and a port and it will attempt to
 /// create a TCP connection with the node at that address
 async fn create_connection<T: BlockChainBase>(
-    node: Arc<Node<T>>,
+    pair: Arc<UserPair<T>>,
     address: String,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
@@ -569,9 +524,9 @@ async fn create_connection<T: BlockChainBase>(
 
     // Send initial message with ID
     let send_mess = NetworkMessage::<T>::new(MessageData::InitialID(
-        node.account.id,
-        node.account.pub_key.clone(),
-        node.account.role,
+        pair.node.account.id,
+        pair.node.account.pub_key.clone(),
+        pair.node.account.role,
     ));
     send_message(&mut stream, send_mess).await?;
 
@@ -581,9 +536,15 @@ async fn create_connection<T: BlockChainBase>(
         _ => return Err(Error::msg("Error getting initial data Message")),
     };
 
+    // Transmit initial bc state
+    let bc_read = pair.node.blockchain.read().await;
+    let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
+    send_message(&mut stream, bc_mess).await?;
+
     // Add to map
     connect_pool
         .add(Connection::new(stream, role, Some(pub_key)), id)
         .await;
+
     Ok(())
 }

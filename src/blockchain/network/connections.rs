@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use rsa::RsaPublicKey;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
@@ -13,12 +14,19 @@ pub struct ConnectionPool {
     pub map: RwLock<HashMap<u128, Connection>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Connection {
+    pub stream: Arc<Halves>,
     pub alive: bool,
-    pub conn: Arc<RwLock<TcpStream>>,
     pub role: Role,
     pub pub_key: Option<RsaPublicKey>,
+}
+
+#[derive(Debug)]
+pub struct Halves {
+    pub read: RwLock<OwnedReadHalf>,
+    pub write: RwLock<OwnedWriteHalf>,
+    pub addr: Option<SocketAddr>,
 }
 
 impl ConnectionPool {
@@ -41,7 +49,7 @@ impl ConnectionPool {
     /// Gets [`TcpStream`] reference based on its id
     ///
     /// Function is used to choose the next Connection to use.
-    pub async fn get(&self, id: u128) -> Option<Arc<RwLock<TcpStream>>> {
+    pub async fn get(&self, id: u128) -> Option<Arc<Halves>> {
         let map_read = self.map.read().await;
 
         for (_, conn) in map_read.iter().filter(|(key, _)| *key == &id) {
@@ -57,15 +65,9 @@ impl ConnectionPool {
     /// Returns the address of the [`Node`] that the [`TcpStream`] connects to
     pub async fn addr(&self, id: u128) -> Option<SocketAddr> {
         // Get stream
-        let stream = match self.get(id).await {
-            Some(s) => s,
-            None => return None,
-        };
-        // Unlock Stream
-        let unlocked = stream.read().await;
-        match unlocked.peer_addr() {
-            Ok(addr) => Some(addr),
-            _ => None,
+        match self.get(id).await {
+            Some(s) => s.addr,
+            None => None,
         }
     }
 }
@@ -73,19 +75,35 @@ impl ConnectionPool {
 impl Connection {
     /// Creates a new [`Connection`] object
     pub fn new(conn: TcpStream, role: Role, pub_key: Option<RsaPublicKey>) -> Self {
+        let stream = Halves::new(conn);
         Self {
-            conn: Arc::new(RwLock::new(conn)),
+            stream: Arc::new(stream),
             alive: true,
             role,
             pub_key,
         }
     }
 
-    /// Gets [`TcpStream`] access
+    /// Gets [`OwnedReadHalf`] and  [`OwnedWriteHalf`]access
     ///
-    /// Returns an Arc reference to a [`TcpStream`]. This is so access to the [`TcpStream`] can be
-    /// acheived over multiple threads.
-    pub fn get_tcp(&self) -> Arc<RwLock<TcpStream>> {
-        Arc::clone(&self.conn)
+    /// Returns an Arc reference to both halves of [`TcpStream`]. This is so access to the stream
+    /// can be provided to multiple threads. This is through [`Halves`].
+    pub fn get_tcp(&self) -> Arc<Halves> {
+        Arc::clone(&self.stream)
+    }
+}
+
+impl Halves {
+    pub fn new(stream: TcpStream) -> Self {
+        let addr = match stream.peer_addr() {
+            Ok(a) => Some(a),
+            Err(_) => None,
+        };
+        let (read, write) = stream.into_split();
+        Self {
+            read: RwLock::new(read),
+            write: RwLock::new(write),
+            addr,
+        }
     }
 }

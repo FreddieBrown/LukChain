@@ -1,15 +1,16 @@
-use crate::blockchain::{events::Event, BlockChainBase};
+use crate::blockchain::{events::Event, BlockChainBase, UserPair};
 
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Error, Result};
 use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use rand::prelude::*;
-use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -30,7 +31,7 @@ pub struct Block<T> {
 }
 
 impl<T: BlockChainBase> BlockChain<T> {
-    /// Creates a new `Blockchain` instance
+    /// Creates a new [`Blockchain`] instance
     pub fn new() -> Self {
         Self {
             chain: Vec::new(),
@@ -42,7 +43,7 @@ impl<T: BlockChainBase> BlockChain<T> {
         }
     }
 
-    /// Gets the hash of the most recent `Block` in the chain
+    /// Gets the hash of the most recent [`Block`] in the chain
     pub fn last_hash(&self) -> Option<String> {
         if self.chain.len() == 0 {
             return None;
@@ -55,8 +56,8 @@ impl<T: BlockChainBase> BlockChain<T> {
     ///
     /// [`id`] is the ID of the user who is in charge of the local instance of the
     /// [`BlockChain`]
-    pub fn append(&mut self, block: Block<T>, priv_key: &RsaPrivateKey, id: u128) -> Result<()> {
-        // Validate `Block`
+    pub async fn append(&mut self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
+        // Validate [`Block`]
         if !block.verify_hash() {
             return Err(Error::msg("Own hash could not be varified"));
         }
@@ -65,24 +66,19 @@ impl<T: BlockChainBase> BlockChain<T> {
             return Err(Error::msg("Invalid prev_hash stored in block"));
         }
 
-        // TODO: Check for nonces that have already been used
-
         // Go through each event and check the data enclosed
-        for event in block.events.iter() {
-            if self.users.contains_key(&event.made_by) {
-                event.execute(priv_key, self.users.get(&event.made_by), id);
-            } else {
-                event.execute(priv_key, None, id);
-            }
-        }
+        if block.execute(&self.users) {
+            // Write back block
+            pair.sync.write_block(block.clone()).await?;
 
-        // If valid, append to `Blockchain` and return Ok
-        self.chain.push(block);
+            // If valid, append to `Blockchain` and return Ok
+            self.chain.push(block);
+        }
 
         Ok(())
     }
 
-    /// Goes through the `Blockchain` and validates it
+    /// Goes through the [`Blockchain`] and validates it
     pub fn validate_chain(&self) -> Result<()> {
         for (i, block) in self.chain.iter().enumerate() {
             if !block.verify_hash() {
@@ -149,7 +145,7 @@ impl<T: BlockChainBase> BlockChain<T> {
 }
 
 impl<T: BlockChainBase> Block<T> {
-    /// Creates a new `Block`
+    /// Creates a new [`Block`]
     pub fn new(prev_hash: Option<String>) -> Self {
         let mut rng = rand::thread_rng();
         Self {
@@ -165,9 +161,10 @@ impl<T: BlockChainBase> Block<T> {
 
     pub fn add_events(&mut self, events: Vec<Event<T>>) {
         self.events = events;
+        self.hash = Some(self.calculate_hash());
     }
 
-    /// Sets the nonce of the `Block`
+    /// Sets the nonce of the [`Block`]
     pub fn set_nonce(&mut self, nonce: u128) {
         self.nonce = nonce;
         self.update_hash();
@@ -175,7 +172,7 @@ impl<T: BlockChainBase> Block<T> {
 
     // Cryptographic functions
 
-    /// Calculates the hash of a given `Block`
+    /// Calculates the hash of a given [`Block`]
     pub fn calculate_hash(&self) -> String {
         let mut hasher = Sha3::sha3_256();
 
@@ -189,26 +186,39 @@ impl<T: BlockChainBase> Block<T> {
         return hasher.result_str();
     }
 
-    /// Updates the hash of a given `Block`
+    /// Updates the hash of a given [`Block`]
     pub fn update_hash(&mut self) {
         self.hash = Some(self.calculate_hash());
     }
 
-    /// Verifies the hash of the `Block`
+    /// Verifies the hash of the [`Block`]
     pub fn verify_hash(&self) -> bool {
         self.hash.is_some() && self.hash.as_ref().unwrap().eq(&self.calculate_hash())
     }
 
     // Functions for events
 
-    /// Adds a event to a `Block`
+    /// Adds a event to a [`Block`]
     pub fn add_event(&mut self, event: Event<T>) {
         self.events.push(event);
         self.update_hash();
     }
 
-    /// Gets the number of events in a given `Block`
+    /// Gets the number of events in a given [`Block`]
     pub fn get_event_count(&self) -> usize {
         self.events.len()
+    }
+
+    pub fn execute(&self, users: &HashMap<u128, RsaPublicKey>) -> bool {
+        // TODO: Check for nonces that have already been used
+        self.events.iter().fold(true, |acc, event| {
+            acc && {
+                if users.contains_key(&event.made_by) {
+                    event.execute(users.get(&event.made_by))
+                } else {
+                    event.execute(None)
+                }
+            }
+        })
     }
 }

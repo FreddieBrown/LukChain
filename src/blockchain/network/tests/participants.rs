@@ -8,14 +8,15 @@ use crate::blockchain::{
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},
         participants_run, send_message,
     },
-    Data,
+    Data, UserPair,
 };
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::Arc;
 
 use futures::future::{AbortHandle, Abortable};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::{sleep, Duration};
+use tokio::sync::Notify;
 use tracing_test::traced_test;
 
 #[tokio::test]
@@ -29,6 +30,7 @@ async fn test_sanity() {
 async fn test_lookup_and_connect() {
     let (lookup_handle, lookup_registration) = AbortHandle::new_pair();
     let (part_handle, part_registration) = AbortHandle::new_pair();
+    let notify: Arc<Notify> = Arc::new(Notify::new());
 
     // Lookup
     let _future = Abortable::new(
@@ -40,13 +42,16 @@ async fn test_lookup_and_connect() {
     );
 
     // Participant
+    let noti_cpy = Arc::clone(&notify);
     let _future2 = Abortable::new(
         tokio::spawn(async move {
             // Define profile
             let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
 
-            sleep(Duration::from_millis(100)).await;
-            participants_run::<Data>(profile, None, Role::User, None).await
+            noti_cpy.notified().await;
+            let pair: Arc<UserPair<Data>> =
+                Arc::new(UserPair::new(Role::User, profile, false).await?);
+            participants_run::<Data>(pair, None).await
         }),
         part_registration,
     );
@@ -68,6 +73,8 @@ async fn test_lookup_and_connect() {
 
         let inbound_addr = listener.local_addr().unwrap();
 
+        println!("TEST ADDR: {:?}", inbound_addr.to_string());
+
         // Register details
         let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(
             1,
@@ -75,9 +82,7 @@ async fn test_lookup_and_connect() {
             account.role,
         ));
 
-        send_message::<Data>(&mut stream, reg_message)
-            .await
-            .unwrap();
+        send_message(&mut stream, reg_message).await.unwrap();
 
         // If get back correct message, end connection
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -89,6 +94,7 @@ async fn test_lookup_and_connect() {
         let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
         send_message(&mut stream, finish_message).await.unwrap();
 
+        notify.notify_one();
         // StartUp Listener and wait for partcipant to connect
         if let Ok((mut inbound, _)) = listener.accept().await {
             // Test intro connection protocol

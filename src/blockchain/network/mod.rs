@@ -13,7 +13,7 @@ mod tests;
 
 pub use self::{
     accounts::{Account, Role},
-    connections::{Connection, ConnectionPool},
+    connections::{Connection, ConnectionPool, Halves},
     jobsync::JobSync,
     lookup::lookup_run,
     messages::traits::{ReadLengthPrefix, WriteLengthPrefix},
@@ -25,15 +25,14 @@ use crate::blockchain::BlockChainBase;
 
 use anyhow::Result;
 use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 use tracing::debug;
 
 /// Sends a new message to a [`Connection`] in [`ConnectionPool`]
 ///
 /// Takes in a new [`NetworkMessage`] and distributes it to a [`Connection`] in the
 /// [`ConnectionPool`] so they are aware of the information which is bein spread.
-pub(crate) async fn send_message<T: BlockChainBase>(
-    stream: &mut TcpStream,
+pub(crate) async fn send_message<T: BlockChainBase, S: AsyncWriteExt + Send + Unpin>(
+    stream: &mut S,
     message: messages::NetworkMessage<T>,
 ) -> Result<()> {
     debug!("Sending Message: {:?}", &message);

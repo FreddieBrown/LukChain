@@ -89,9 +89,7 @@ async fn test_lookup_request_less_than_4() {
         // Register details
         let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message::<Data>(&mut stream, reg_message)
-            .await
-            .unwrap();
+        send_message(&mut stream, reg_message).await.unwrap();
 
         // If get back correct message, end connection
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -174,9 +172,7 @@ async fn test_lookup_request_4() {
         // Register details
         let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message::<Data>(&mut stream, reg_message)
-            .await
-            .unwrap();
+        send_message(&mut stream, reg_message).await.unwrap();
 
         // If get back correct message, end connection
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -234,9 +230,7 @@ async fn test_lookup_when_empty() {
         // Register details
         let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message::<Data>(&mut stream, reg_message)
-            .await
-            .unwrap();
+        send_message(&mut stream, reg_message).await.unwrap();
 
         // If get back correct message, end connection
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -245,7 +239,7 @@ async fn test_lookup_when_empty() {
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
         let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest);
-        send_message::<Data>(&mut stream, lookup_msg).await.unwrap();
+        send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -292,9 +286,7 @@ async fn test_lookup_request_1() {
         // Register details
         let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-        send_message::<Data>(&mut stream, reg_message)
-            .await
-            .unwrap();
+        send_message(&mut stream, reg_message).await.unwrap();
 
         // If get back correct message, end connection
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -303,7 +295,7 @@ async fn test_lookup_request_1() {
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
         let lookup_msg = NetworkMessage::<Data>::new(MessageData::RequestAddress(1));
-        send_message::<Data>(&mut stream, lookup_msg).await.unwrap();
+        send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -313,9 +305,7 @@ async fn test_lookup_request_1() {
         assert!(matches!(recv_message.data, MessageData::PeerAddress(_)));
 
         let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
-        send_message::<Data>(&mut stream, finish_message)
-            .await
-            .unwrap();
+        send_message(&mut stream, finish_message).await.unwrap();
     })
     .await
     .unwrap();
@@ -334,9 +324,7 @@ async fn connect_test(id: u128, lookup_addr: String) {
     // Register details
     let reg_message = NetworkMessage::<Data>::new(MessageData::LookUpReg(id, own_addr, role));
 
-    send_message::<Data>(&mut stream, reg_message)
-        .await
-        .unwrap();
+    send_message(&mut stream, reg_message).await.unwrap();
 
     // If get back correct message, end connection
     let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -345,7 +333,5 @@ async fn connect_test(id: u128, lookup_addr: String) {
     assert!(matches!(recv_message.data, MessageData::Confirm));
 
     let finish_message = NetworkMessage::<Data>::new(MessageData::Finish);
-    send_message::<Data>(&mut stream, finish_message)
-        .await
-        .unwrap();
+    send_message(&mut stream, finish_message).await.unwrap();
 }

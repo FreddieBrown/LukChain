@@ -1,13 +1,11 @@
-use crate::blockchain::{
-    network::messages::{NetworkMessage, ProcessMessage},
-    BlockChainBase,
-};
+use crate::blockchain::{network::messages::ProcessMessage, Block, BlockChainBase};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use anyhow::{Error, Result};
 use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
+    mpsc::{self, UnboundedReceiver, UnboundedSender},
     Notify, RwLock,
 };
 use tracing::debug;
@@ -18,27 +16,32 @@ pub struct JobSync<T: BlockChainBase> {
     pub permits: AtomicUsize,
     pub waiters: AtomicUsize,
     pub notify: Notify,
-    pub sender: Sender<ProcessMessage<T>>,
-    pub receiver: RwLock<Receiver<ProcessMessage<T>>>,
-    pub write_back: RwLock<Vec<NetworkMessage<T>>>,
-    pub write_permission: bool,
-    pub write_notify: Notify,
+    pub outbound_channel: (
+        UnboundedSender<ProcessMessage<T>>,
+        RwLock<UnboundedReceiver<ProcessMessage<T>>>,
+    ),
+    pub app_channel: (
+        UnboundedSender<Block<T>>,
+        RwLock<UnboundedReceiver<Block<T>>>,
+    ),
+    pub app_permission: bool,
+    pub app_notify: Notify,
 }
 
 impl<T: BlockChainBase> JobSync<T> {
     /// Creates a new instance of JobSync
-    pub fn new(write_permission: bool) -> Self {
-        let (tx, rx) = mpsc::channel::<ProcessMessage<T>>(1000);
+    pub fn new(app_permission: bool) -> Self {
+        let (ptx, prx) = mpsc::unbounded_channel::<ProcessMessage<T>>();
+        let (wtx, wrx) = mpsc::unbounded_channel::<Block<T>>();
         Self {
             nonce_set: RwLock::new(HashSet::new()),
             permits: AtomicUsize::new(0),
             waiters: AtomicUsize::new(0),
             notify: Notify::new(),
-            sender: tx,
-            receiver: RwLock::new(rx),
-            write_back: RwLock::new(Vec::new()),
-            write_permission,
-            write_notify: Notify::new(),
+            outbound_channel: (ptx, RwLock::new(prx)),
+            app_channel: (wtx, RwLock::new(wrx)),
+            app_permission,
+            app_notify: Notify::new(),
         }
     }
 
@@ -75,5 +78,16 @@ impl<T: BlockChainBase> JobSync<T> {
             "Claimed permit. Permits left: {}",
             self.permits.load(Ordering::SeqCst)
         );
+    }
+
+    pub async fn write_block(&self, block: Block<T>) -> Result<()> {
+        if self.app_permission {
+            // let mut wb_unlocked = self.outbound_channel.0;
+            match self.app_channel.0.send(block) {
+                Ok(_) => self.app_notify.notify_one(),
+                Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+            };
+        }
+        Ok(())
     }
 }

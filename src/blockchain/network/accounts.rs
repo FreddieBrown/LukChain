@@ -17,6 +17,7 @@ pub struct Account {
     pub block_size: usize,
     pub pub_key: RsaPublicKey,
     pub(crate) priv_key: RsaPrivateKey,
+    pub profile: Profile,
 }
 
 #[derive(Clone, Debug, Copy, Deserialize, Serialize)]
@@ -31,18 +32,19 @@ impl Account {
         let mut rng = rand::thread_rng();
         let pub_key: RsaPublicKey;
         let priv_key: RsaPrivateKey;
+        let profile_use = profile.clone();
 
         let (pub_key, priv_key): (RsaPublicKey, RsaPrivateKey) =
-            if profile.pub_key.is_some() && profile.priv_key.is_some() {
-                (profile.pub_key.unwrap(), profile.priv_key.unwrap())
+            if profile_use.pub_key.is_some() && profile_use.priv_key.is_some() {
+                (profile_use.pub_key.unwrap(), profile_use.priv_key.unwrap())
             } else {
                 priv_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate a key");
                 pub_key = RsaPublicKey::from(&priv_key);
                 (pub_key, priv_key)
             };
 
-        let block_size: usize = if profile.block_size.is_some() {
-            profile.block_size.unwrap()
+        let block_size: usize = if profile_use.block_size.is_some() {
+            profile_use.block_size.unwrap()
         } else {
             10
         };
@@ -55,6 +57,7 @@ impl Account {
             block_size,
             pub_key,
             priv_key,
+            profile,
         }
     }
 

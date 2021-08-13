@@ -2,11 +2,15 @@
 
 use crate::blockchain::{
     config::Profile,
-    network::accounts::{Account, Role},
-    Block, BlockChain, BlockChainBase, Event,
+    network::{
+        accounts::{Account, Role},
+        JobSync,
+    },
+    Block, BlockChain, BlockChainBase, Event, UserPair,
 };
 
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::sync::RwLock;
@@ -28,23 +32,41 @@ impl<T: BlockChainBase> Node<T> {
         }
     }
 
+    /// Function to create a blockchain with a genesis block
+    pub async fn genesis(profile: Profile, sync: &JobSync<T>) -> Result<Self> {
+        let account = Account::new(Role::Miner, profile);
+        let mut initial_bc: BlockChain<T> = BlockChain::new();
+        let genesis: Block<T> = Block::new(None);
+        sync.write_block(genesis.clone()).await?;
+        initial_bc.chain.push(genesis);
+        Ok(Self {
+            account,
+            blockchain: RwLock::new(initial_bc),
+            loose_events: RwLock::new(Vec::new()),
+        })
+    }
+
+    /// Gets the length of the underlying blockchain
     pub async fn bc_len(&self) -> usize {
         let unlocked = self.blockchain.read().await;
         unlocked.len()
     }
 
+    /// Returns the overlap percentage between 2 [`BlockChain`] instances
     pub async fn chain_overlap(&self, chain: &BlockChain<T>) -> f64 {
         let unlocked = self.blockchain.read().await;
         unlocked.chain_overlap(chain)
     }
 
+    /// Determines if a given block is in the underlying [`BlockChain']
     pub async fn in_chain(&self, block: &Block<T>) -> bool {
         let unlocked = self.blockchain.read().await;
         unlocked.in_chain(block)
     }
 
-    pub async fn add_block(&self, block: Block<T>) -> Result<()> {
+    /// Adds a [`Block`] to the underlying [`BlockChain`]
+    pub async fn add_block(&self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
         let mut unlocked = self.blockchain.write().await;
-        unlocked.append(block, &self.account.priv_key, self.account.id)
+        unlocked.append(block, pair).await
     }
 }
