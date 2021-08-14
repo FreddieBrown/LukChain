@@ -20,7 +20,7 @@ pub struct Account {
     pub profile: Profile,
 }
 
-#[derive(Clone, Debug, Copy, Deserialize, Serialize)]
+#[derive(Clone, Debug, Copy, Deserialize, Serialize, PartialEq)]
 pub enum Role {
     User,
     Miner,

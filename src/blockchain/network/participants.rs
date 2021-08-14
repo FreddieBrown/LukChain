@@ -113,7 +113,7 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
         MessageData::Confirm
     ) {
         // Create general request message and send over stream
-        let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest);
+        let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest(None));
 
         send_message(&mut stream, gen_req).await?;
 

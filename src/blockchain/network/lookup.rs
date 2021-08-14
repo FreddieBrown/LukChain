@@ -91,8 +91,8 @@ async fn process_lookup<T: 'static + BlockChainBase>(
                 MessageData::Confirm
             }
             MessageData::RequestAddress(id) => get_connection(id, addr_clone).await,
-            MessageData::GeneralAddrRequest => {
-                let connections = get_connections(client_id, addr_clone).await;
+            MessageData::GeneralAddrRequest(r) => {
+                let connections = get_connections(client_id, addr_clone, r).await;
                 if connections.len() == 0 {
                     MessageData::NoAddr
                 } else {
@@ -110,13 +110,22 @@ async fn process_lookup<T: 'static + BlockChainBase>(
     Ok(())
 }
 
-async fn get_connections(id: u128, address_table: AddressTable) -> Vec<String> {
+async fn get_connections(id: u128, address_table: AddressTable, role: Option<Role>) -> Vec<String> {
     let unlocked_table = address_table.read().await;
 
     // Use filters etc to pick 4 random addresses from table
     unlocked_table
         .keys()
-        .filter(|k| *k != &id)
+        .filter(|k| {
+            *k != &id && {
+                if let Some(r) = role {
+                    debug!("{:?}", unlocked_table.get(k).unwrap().1 == r);
+                    unlocked_table.get(k).unwrap().1 == r
+                } else {
+                    true
+                }
+            }
+        })
         .map(|k| unlocked_table.get(k).unwrap().0.clone())
         .choose_multiple(&mut thread_rng(), 4)
 }
