@@ -46,7 +46,8 @@ async fn test_lookup_and_connect() {
     let _future2 = Abortable::new(
         tokio::spawn(async move {
             // Define profile
-            let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
+            let profile =
+                Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")), None);
 
             noti_cpy.notified().await;
             let pair: Arc<UserPair<Data>> =
@@ -61,7 +62,7 @@ async fn test_lookup_and_connect() {
         // Connect to the LookUp
         let mut buffer = [0_u8; 4096];
         let lookup_addr = "127.0.0.1:8281";
-        let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")));
+        let profile = Profile::new(None, None, None, Some(String::from("127.0.0.1:8281")), None);
         let account: Account = Account::new(Role::User, profile);
 
         // Setup Network connect

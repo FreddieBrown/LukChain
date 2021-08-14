@@ -39,9 +39,13 @@ async fn add_block_to_blockchain() {
     let mut block: Block<Data> = Block::new(None);
     let event: Event<Data> = Event::new(10, Data::GroupMessage(String::from("Hello")));
     let pair: Arc<UserPair<Data>> = Arc::new(
-        UserPair::new(Role::User, Profile::new(None, None, None, None), false)
-            .await
-            .unwrap(),
+        UserPair::new(
+            Role::User,
+            Profile::new(None, None, None, None, None),
+            false,
+        )
+        .await
+        .unwrap(),
     );
     block.add_event(event);
     assert!(block.get_event_count() == 1);
@@ -59,6 +63,7 @@ fn sign_event_with_key() {
             priv_key: None,
             block_size: None,
             lookup_address: None,
+            lookup_filter: None,
         },
     );
     let mut event: Event<Data> = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
@@ -75,6 +80,7 @@ fn sign_message_with_wrong_key() {
             priv_key: None,
             block_size: None,
             lookup_address: None,
+            lookup_filter: None,
         },
     );
     let user1: Account = Account::new(
@@ -84,6 +90,7 @@ fn sign_message_with_wrong_key() {
             priv_key: None,
             block_size: None,
             lookup_address: None,
+            lookup_filter: None,
         },
     );
     let mut event: Event<Data> = Event::new(user.id, Data::GroupMessage(String::from("Hello")));
