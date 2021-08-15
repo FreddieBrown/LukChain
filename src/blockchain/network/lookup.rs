@@ -9,7 +9,6 @@ use crate::blockchain::{
 };
 
 use std::collections::HashMap;
-use std::net::Shutdown;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
@@ -99,15 +98,14 @@ async fn process_lookup<T: 'static + BlockChainBase>(
                     MessageData::PeerAddresses(connections)
                 }
             }
-            MessageData::Finish => break,
+            MessageData::Finish => {
+                info!("Closing Connection with node");
+                return Ok(());
+            }
             _ => MessageData::NoAddr,
         });
         send_message(&mut stream, send_mess).await?;
     }
-
-    stream.into_std()?.shutdown(Shutdown::Both)?;
-
-    Ok(())
 }
 
 async fn get_connections(id: u128, address_table: AddressTable, role: Option<Role>) -> Vec<String> {
