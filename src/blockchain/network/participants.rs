@@ -12,7 +12,7 @@ use crate::blockchain::{
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::DerefMut;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use anyhow::{Error, Result};
 use futures::join;
@@ -169,14 +169,36 @@ async fn inbound<T: 'static + BlockChainBase + Send>(
             .unwrap()
     });
     // Thread to go through all connections and deal with incoming messages (reactive)
-    task::spawn(async move {
-        check_connections(Arc::clone(&pair), Arc::clone(&connect_pool))
-            .await
-            .unwrap()
+    let _conns: Result<()> = task::spawn(async move {
+        loop {
+            let pair_clone = Arc::clone(&pair);
+            let cp_clone = Arc::clone(&connect_pool);
+            let cp_clear_status = pair_clone.sync.cp_clear.load(Ordering::SeqCst);
+            if cp_clear_status {
+                // Clear connection pool of all dead connections
+                clear_connection_pool(Arc::clone(&pair_clone), Arc::clone(&cp_clone)).await;
+                pair_clone.sync.cp_clear.store(false, Ordering::SeqCst);
+            }
+            check_connections(Arc::clone(&pair_clone), Arc::clone(&cp_clone)).await?
+        }
     })
     .await?;
 
     Ok(())
+}
+
+async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
+    pair: Arc<UserPair<T>>,
+    connect_pool: Arc<ConnectionPool>,
+) {
+    let mut cp_buffer_write = pair.sync.cp_buffer.write().await;
+    let mut map_write = connect_pool.map.write().await;
+
+    debug!("CLEARING CONNECTION POOL");
+    while let Some(id) = cp_buffer_write.pop() {
+        // Remove item from connection pool
+        map_write.remove(&id);
+    }
 }
 
 /// Uses [`TcpListener`] to allow incoming connections
@@ -253,42 +275,56 @@ async fn initial_stream_handler<T: BlockChainBase>(
 }
 
 /// Goes through each [`Connection`] and checks to see if they contain a [`NetworkMessage`]
+///
+/// Goes through all connections and checks if they have sent anything. If the stream is shutdown
+/// then the [`Connection`] is removed from the [`ConnectionPool`].
 async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
-    debug!("Checking connections in ConnectionPool");
-    loop {
-        let conns = connect_pool.map.read().await;
+    let conns = connect_pool.map.read().await;
 
-        for (_, conn) in conns.iter() {
-            let stream_lock: Arc<Halves> = conn.get_tcp();
+    for (id, conn) in conns.iter() {
+        let pair_cpy = Arc::clone(&pair);
+        debug!("CHECKING {}", id);
+        let stream_lock: Arc<Halves> = conn.get_tcp();
 
-            let pair_cp = Arc::clone(&pair);
+        let pair_cp = Arc::clone(&pair);
+        let id_cpy = id.clone();
 
-            task::spawn(async move {
-                let mut stream = stream_lock.read.write().await;
-                let mut buffer = [0_u8; 4096];
+        let _ret: Result<()> = task::spawn(async move {
+            let mut stream = stream_lock.read.write().await;
+            let mut buffer = [0_u8; 4096];
 
-                // Check to see if connection has a message
-                let peeked = stream.peek(&mut buffer).await.unwrap();
-
-                // If it does, pass to state machine
-                if peeked > 0 {
-                    let message: NetworkMessage<T> =
-                        NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
-                            .await
-                            .map_err(|_| Error::msg("Error with stream"))
-                            .unwrap();
-
-                    debug!("New Message: {:?}", &message);
-
-                    recv_state_machine(pair_cp, message).await.unwrap();
+            // Check to see if connection has a message
+            let peeked = match stream.peek(&mut buffer).await {
+                Ok(p) => p,
+                Err(_) => {
+                    pair_cpy.sync.cp_clear.store(true, Ordering::SeqCst);
+                    let mut cp_buffer_cpy = pair_cpy.sync.cp_buffer.write().await;
+                    cp_buffer_cpy.push(id_cpy);
+                    return Ok(());
                 }
-                // if not, move on
-            });
-        }
+            };
+
+            // If it does, pass to state machine
+            if peeked > 0 {
+                let message: NetworkMessage<T> =
+                    NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
+                        .await
+                        .map_err(|_| Error::msg("Error with stream"))?;
+
+                debug!("New Message: {:?}", &message);
+
+                recv_state_machine(pair_cp, message).await?;
+            }
+            // if not, move on
+            Ok(())
+        })
+        .await?;
     }
+
+    Ok(())
 }
 
 /// Deals with incoming messages from each [`Connection`] in the [`ConnectionPool`]
@@ -473,18 +509,25 @@ async fn outgoing_connections<T: BlockChainBase>(
                         unsent_q.push(m.clone());
                         continue;
                     }
-                    send_all(net_mess.clone(), Arc::clone(&connect_pool)).await
+                    match send_all(net_mess.clone(), Arc::clone(&connect_pool)).await {
+                        Ok(_) => debug!("MESSAGE SENDING SUCCESS"),
+                        Err(e) => error!("MESSAGE SENDING ERROR: {}", e),
+                    };
                 }
                 ProcessMessage::NewConnection(addr) => {
-                    create_connection::<T>(
+                    match create_connection::<T>(
                         Arc::clone(&pair),
                         String::from(addr),
                         Arc::clone(&connect_pool),
                     )
                     .await
+                    {
+                        Ok(_) => debug!("CONNECTION CREATION SUCCESS"),
+                        Err(e) => error!("CONNECTION CREATION FAILED: {}", e),
+                    }
                 }
                 _ => unreachable!(),
-            }?
+            }
         }
         info!("AFTER IF");
     }
