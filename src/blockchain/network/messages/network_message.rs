@@ -30,7 +30,7 @@ pub enum MessageData<T> {
     // Lookup Table Requests
     LookUpReg(u128, String, Role),
     RequestAddress(u128),
-    GeneralAddrRequest(Option<Role>),
+    GeneralAddrRequest(u128, Option<Role>),
     PeerAddresses(Vec<String>),
     PeerAddress(String),
     NoAddr,

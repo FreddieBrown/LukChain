@@ -98,7 +98,7 @@ async fn test_lookup_request_less_than_4() {
         assert!(matches!(recv_message.data, MessageData::Confirm));
 
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(None));
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(id, None));
         send_message(&mut stream, lookup_msg).await.unwrap();
 
         let recv_message = NetworkMessage::<Data>::from_stream(&mut stream, &mut buffer)
@@ -180,7 +180,7 @@ async fn test_lookup_request_4() {
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(None));
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(id, None));
         send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
@@ -238,7 +238,7 @@ async fn test_lookup_when_empty() {
             .unwrap();
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
-        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(None));
+        let lookup_msg = NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(id, None));
         send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
@@ -371,7 +371,7 @@ async fn test_lookup_request_4_noone_in_role() {
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
         let lookup_msg =
-            NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(Some(Role::Miner)));
+            NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(id, Some(Role::Miner)));
         send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses
@@ -449,7 +449,7 @@ async fn test_lookup_request_4_less_in_role() {
         assert!(matches!(recv_message.data, MessageData::Confirm));
         // Do random 4 lookup
         let lookup_msg =
-            NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(Some(Role::Miner)));
+            NetworkMessage::<Data>::new(MessageData::GeneralAddrRequest(id, Some(Role::Miner)));
         send_message(&mut stream, lookup_msg).await.unwrap();
 
         // Assert there are 4 addresses

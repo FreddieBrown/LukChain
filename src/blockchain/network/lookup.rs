@@ -69,7 +69,6 @@ async fn process_lookup<T: 'static + BlockChainBase>(
     address_table: AddressTable,
 ) -> Result<()> {
     let mut buffer = [0_u8; 4096];
-    let mut client_id = 0;
 
     loop {
         let addr_clone = Arc::clone(&address_table);
@@ -82,16 +81,14 @@ async fn process_lookup<T: 'static + BlockChainBase>(
             MessageData::LookUpReg(id, addr, role) => {
                 // Deal with data from message
                 let mut unlocked_table = addr_clone.write().await;
-                // Add node to table
-                client_id = id;
 
                 unlocked_table.insert(id, (addr, role));
                 debug!("Address Table: {:?}", &unlocked_table);
                 MessageData::Confirm
             }
             MessageData::RequestAddress(id) => get_connection(id, addr_clone).await,
-            MessageData::GeneralAddrRequest(r) => {
-                let connections = get_connections(client_id, addr_clone, r).await;
+            MessageData::GeneralAddrRequest(id, r) => {
+                let connections = get_connections(id, addr_clone, r).await;
                 if connections.len() == 0 {
                     MessageData::NoAddr
                 } else {
