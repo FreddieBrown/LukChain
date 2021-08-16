@@ -10,7 +10,10 @@ use crate::blockchain::{
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use anyhow::Result;
 use rand::seq::IteratorRandom;
@@ -19,7 +22,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
-type AddressTable = Arc<RwLock<HashMap<u128, (String, Role)>>>;
+type AddressTable = Arc<RwLock<HashMap<u128, (String, Role, AtomicUsize)>>>;
 
 /// Starts up lookup server functionality
 ///
@@ -82,7 +85,7 @@ async fn process_lookup<T: 'static + BlockChainBase>(
                 // Deal with data from message
                 let mut unlocked_table = addr_clone.write().await;
 
-                unlocked_table.insert(id, (addr, role));
+                unlocked_table.insert(id, (addr, role, AtomicUsize::new(0)));
                 debug!("Address Table: {:?}", &unlocked_table);
                 MessageData::Confirm
             }
@@ -99,13 +102,21 @@ async fn process_lookup<T: 'static + BlockChainBase>(
                 info!("Closing Connection with node");
                 return Ok(());
             }
+            MessageData::Strike(id) => {
+                info!("Giving {} a strike", &id);
+                return strike(id, addr_clone).await;
+            }
             _ => MessageData::NoAddr,
         });
         send_message(&mut stream, send_mess).await?;
     }
 }
 
-async fn get_connections(id: u128, address_table: AddressTable, role: Option<Role>) -> Vec<String> {
+async fn get_connections(
+    id: u128,
+    address_table: AddressTable,
+    role: Option<Role>,
+) -> Vec<(u128, String)> {
     let unlocked_table = address_table.read().await;
 
     // Use filters etc to pick 4 random addresses from table
@@ -121,8 +132,35 @@ async fn get_connections(id: u128, address_table: AddressTable, role: Option<Rol
                 }
             }
         })
-        .map(|k| unlocked_table.get(k).unwrap().0.clone())
+        .map(|k| (k.clone(), unlocked_table.get(k).unwrap().0.clone()))
         .choose_multiple(&mut thread_rng(), 4)
+}
+
+/// Strike system for poorly behaving nodes
+///
+/// Adds strikes to connections which aren't interacting
+/// with other nodes correctly. More than a certain number of
+/// strikes and they are removed from the AddressTable.
+async fn strike(id: u128, address_table: AddressTable) -> Result<()> {
+    let mut unlocked_table = address_table.write().await;
+    // Go through iterator and add strikes
+    let datas: Vec<(u128, usize)> = unlocked_table
+        .iter()
+        .filter(|(k, _)| *k == &id)
+        .map(|(k, (_, _, strike))| {
+            strike.fetch_add(1, Ordering::SeqCst);
+            (k.clone(), strike.load(Ordering::SeqCst))
+        })
+        .collect();
+
+    for (key, size) in datas {
+        if size > 10 {
+            unlocked_table.remove(&key);
+            debug!("REMOVING: {}", &key);
+        }
+    }
+    // If too many strikes, remove from address table
+    Ok(())
 }
 
 async fn get_connection<T: 'static + BlockChainBase>(
@@ -130,8 +168,8 @@ async fn get_connection<T: 'static + BlockChainBase>(
     address_table: AddressTable,
 ) -> MessageData<T> {
     let unlocked_table = address_table.read().await;
-    if let Some((addr, _)) = unlocked_table.get(&id) {
-        MessageData::<T>::PeerAddress(addr.clone())
+    if let Some((addr, _, _)) = unlocked_table.get(&id) {
+        MessageData::<T>::PeerAddress((id, addr.clone()))
     } else {
         MessageData::NoAddr
     }

@@ -109,7 +109,7 @@ async fn test_lookup_request_less_than_4() {
         match recv_message.data {
             MessageData::PeerAddresses(v) => {
                 assert_eq!(v.len(), 1);
-                assert!(!v.contains(&stream.local_addr().unwrap().to_string()));
+                assert!(!v.contains(&(id, stream.local_addr().unwrap().to_string())));
             }
             _ => assert!(false),
         };
@@ -192,7 +192,7 @@ async fn test_lookup_request_4() {
         match recv_message.data {
             MessageData::PeerAddresses(v) => {
                 assert_eq!(v.len(), 4);
-                assert!(!v.contains(&stream.local_addr().unwrap().to_string()));
+                assert!(!v.contains(&(id, stream.local_addr().unwrap().to_string())));
             }
             _ => assert!(false),
         };
@@ -462,7 +462,7 @@ async fn test_lookup_request_4_less_in_role() {
         match recv_message.data {
             MessageData::PeerAddresses(v) => {
                 assert_eq!(v.len(), 1);
-                assert!(!v.contains(&stream.local_addr().unwrap().to_string()));
+                assert!(!v.contains(&(id, stream.local_addr().unwrap().to_string())));
             }
             _ => assert!(false),
         };
