@@ -28,6 +28,7 @@ pub struct JobSync<T: BlockChainBase> {
     pub app_notify: Notify,
     pub cp_clear: AtomicBool,
     pub cp_buffer: RwLock<Vec<u128>>,
+    pub cp_size: AtomicUsize,
 }
 
 impl<T: BlockChainBase> JobSync<T> {
@@ -46,6 +47,7 @@ impl<T: BlockChainBase> JobSync<T> {
             app_notify: Notify::new(),
             cp_clear: AtomicBool::new(false),
             cp_buffer: RwLock::new(Vec::new()),
+            cp_size: AtomicUsize::new(0),
         }
     }
 

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use anyhow::{Error, Result};
 use rsa::RsaPublicKey;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
@@ -41,9 +42,14 @@ impl ConnectionPool {
     ///
     /// Function will take in a new [`Connection`] and will add it to the HashMap
     /// behind the ID that the external [`Node`] provided
-    pub async fn add(&self, connection: Connection, id: u128) {
+    pub async fn add(&self, connection: Connection, id: u128) -> Result<()> {
         let mut map = self.map.write().await;
-        map.insert(id, connection);
+        if !map.contains_key(&id) {
+            map.insert(id, connection);
+            Ok(())
+        } else {
+            Err(Error::msg("ALREADY IN CONNECTION POOL"))
+        }
     }
 
     /// Gets [`TcpStream`] reference based on its id

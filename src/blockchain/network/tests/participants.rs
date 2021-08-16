@@ -98,6 +98,7 @@ async fn test_lookup_and_connect() {
         notify.notify_one();
         // StartUp Listener and wait for partcipant to connect
         if let Ok((mut inbound, _)) = listener.accept().await {
+            println!("CONNECTION");
             // Test intro connection protocol
             // Accept initial ID Message
             let mut buffer = [0_u8; 4096];
