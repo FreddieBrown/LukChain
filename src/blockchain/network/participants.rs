@@ -12,13 +12,14 @@ use crate::blockchain::{
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::DerefMut;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use anyhow::{Error, Result};
 use futures::join;
 use rsa::RsaPublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 /// Main runner function for participant functionality
@@ -113,7 +114,10 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
         MessageData::Confirm
     ) {
         // Create general request message and send over stream
-        let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest);
+        let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest(
+            pair.node.account.id,
+            pair.node.account.profile.lookup_filter,
+        ));
 
         send_message(&mut stream, gen_req).await?;
 
@@ -126,10 +130,10 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
         match read_in.data {
             MessageData::PeerAddresses(addrs) => {
                 // Iterate over addresses and create connection requests
-                for addr in addrs {
+                for (id, addr) in addrs {
                     debug!("Creating Connection Message for: {}", &addr);
 
-                    let process_message = ProcessMessage::NewConnection(addr);
+                    let process_message = ProcessMessage::NewConnection(id, addr);
 
                     match pair.sync.outbound_channel.0.send(process_message) {
                         Ok(_) => pair.sync.new_permit(),
@@ -146,6 +150,82 @@ async fn initial_lookup<T: 'static + BlockChainBase>(
 
     let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
     send_message(&mut stream, finish_message).await?;
+
+    debug!("FINISHED INITIAL LOOKUP");
+
+    Ok(())
+}
+
+/// Connects to the lookup server and creates messages to form connections
+///
+/// Node connects to specific [`LookUp`] node and sends a [`GeneralAddrRequest`].
+/// The node will return the result of the query depending on what is contained within
+/// its database.
+async fn general_lookup<T: 'static + BlockChainBase>(
+    pair: Arc<UserPair<T>>,
+    address: String,
+) -> Result<()> {
+    let mut buffer = [0_u8; 4096];
+    debug!("GENERAL LOOKUP");
+    debug!("Creating LookUp Connection with: {}", address);
+    // Open connection
+    let mut stream: TcpStream = TcpStream::connect(address).await?;
+
+    // Create general request message and send over stream
+    let gen_req = NetworkMessage::<T>::new(MessageData::GeneralAddrRequest(
+        pair.node.account.id,
+        pair.node.account.profile.lookup_filter,
+    ));
+
+    send_message(&mut stream, gen_req).await?;
+
+    debug!("Sent Message");
+
+    let read_in = NetworkMessage::<T>::from_stream(&mut stream, &mut buffer).await?;
+
+    debug!("Read Message");
+
+    match read_in.data {
+        MessageData::PeerAddresses(addrs) => {
+            // Iterate over addresses and create connection requests
+            for (id, addr) in addrs {
+                debug!("Creating Connection Message for: {}", &addr);
+
+                let process_message = ProcessMessage::NewConnection(id, addr);
+
+                match pair.sync.outbound_channel.0.send(process_message) {
+                    Ok(_) => pair.sync.new_permit(),
+                    Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+                };
+            }
+        }
+        MessageData::NoAddr => {
+            let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
+            send_message(&mut stream, finish_message).await?;
+            return Err(Error::msg("No addresses in the lookup table"));
+        }
+        _ => unreachable!(),
+    }
+
+    let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
+    send_message(&mut stream, finish_message).await?;
+
+    Ok(())
+}
+
+/// Connects to the lookup server and sends a [`Strike`] message
+async fn lookup_strike<T: 'static + BlockChainBase>(address: String, conn_id: u128) -> Result<()> {
+    debug!("SENDING STRIKE");
+    debug!("Creating LookUp Connection with: {}", address);
+    // Open connection
+    let mut stream: TcpStream = TcpStream::connect(address).await?;
+
+    // Create general request message and send over stream
+    let gen_req = NetworkMessage::<T>::new(MessageData::Strike(conn_id));
+
+    send_message(&mut stream, gen_req).await?;
+
+    debug!("Sent Message");
 
     Ok(())
 }
@@ -167,13 +247,52 @@ async fn inbound<T: 'static + BlockChainBase + Send>(
             .unwrap()
     });
     // Thread to go through all connections and deal with incoming messages (reactive)
-    task::spawn(async move {
-        check_connections(Arc::clone(&pair), Arc::clone(&connect_pool))
-            .await
-            .unwrap()
+    let _conns: Result<()> = task::spawn(async move {
+        loop {
+            let pair_clone = Arc::clone(&pair);
+            let cp_clone = Arc::clone(&connect_pool);
+            let cp_clear_status = pair_clone.sync.cp_clear.load(Ordering::SeqCst);
+            let cp_size = pair_clone.sync.cp_size.load(Ordering::SeqCst);
+            if cp_clear_status {
+                // Clear connection pool of all dead connections
+                clear_connection_pool(Arc::clone(&pair_clone), Arc::clone(&cp_clone)).await?;
+                pair_clone.sync.cp_clear.store(false, Ordering::SeqCst);
+            }
+
+            if cp_size > 0 {
+                check_connections(Arc::clone(&pair_clone), Arc::clone(&cp_clone)).await?
+            } else {
+                // Sleep for a moment (10 seconds?)
+                debug!("NO CONNECTIONS");
+                sleep(Duration::from_millis(1000)).await;
+            }
+        }
     })
     .await?;
 
+    Ok(())
+}
+
+async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
+    pair: Arc<UserPair<T>>,
+    connect_pool: Arc<ConnectionPool>,
+) -> Result<()> {
+    let mut cp_buffer_write = pair.sync.cp_buffer.write().await;
+    let size = cp_buffer_write.len();
+    let mut map_write = connect_pool.map.write().await;
+
+    debug!("CLEARING CONNECTION POOL");
+    while let Some(id) = cp_buffer_write.pop() {
+        debug!("REMOVING: {}", &id);
+        // Remove item from connection pool
+        map_write.remove(&id);
+        // Send strike message to lookup
+        if let Some(addr) = pair.node.account.profile.lookup_address.clone() {
+            lookup_strike::<T>(addr, id).await?;
+        }
+    }
+
+    pair.sync.cp_size.fetch_sub(size, Ordering::SeqCst);
     Ok(())
 }
 
@@ -231,9 +350,13 @@ async fn process_connection<T: 'static + BlockChainBase>(
     send_message(&mut stream, bc_mess).await?;
 
     let conn = Connection::new(stream, role, Some(pub_key));
-    connect_pool.add(conn, id).await;
-
-    Ok(())
+    match connect_pool.add(conn, id).await {
+        Ok(_) => {
+            pair.sync.cp_size.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Finds the [`MessageData::InitialID`] in a [`TcpStream`]
@@ -251,42 +374,55 @@ async fn initial_stream_handler<T: BlockChainBase>(
 }
 
 /// Goes through each [`Connection`] and checks to see if they contain a [`NetworkMessage`]
+///
+/// Goes through all connections and checks if they have sent anything. If the stream is shutdown
+/// then the [`Connection`] is removed from the [`ConnectionPool`].
 async fn check_connections<T: 'static + BlockChainBase + std::marker::Sync>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
-    debug!("Checking connections in ConnectionPool");
-    loop {
-        let conns = connect_pool.map.read().await;
+    let conns = connect_pool.map.read().await;
 
-        for (_, conn) in conns.iter() {
-            let stream_lock: Arc<Halves> = conn.get_tcp();
+    for (id, conn) in conns.iter() {
+        let pair_cpy = Arc::clone(&pair);
+        let stream_lock: Arc<Halves> = conn.get_tcp();
 
-            let pair_cp = Arc::clone(&pair);
+        let pair_cp = Arc::clone(&pair);
+        let id_cpy = id.clone();
 
-            task::spawn(async move {
-                let mut stream = stream_lock.read.write().await;
-                let mut buffer = [0_u8; 4096];
+        let _ret: Result<()> = task::spawn(async move {
+            let mut stream = stream_lock.read.write().await;
+            let mut buffer = [0_u8; 4096];
 
-                // Check to see if connection has a message
-                let peeked = stream.peek(&mut buffer).await.unwrap();
-
-                // If it does, pass to state machine
-                if peeked > 0 {
-                    let message: NetworkMessage<T> =
-                        NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
-                            .await
-                            .map_err(|_| Error::msg("Error with stream"))
-                            .unwrap();
-
-                    debug!("New Message: {:?}", &message);
-
-                    recv_state_machine(pair_cp, message).await.unwrap();
+            // Check to see if connection has a message
+            let peeked = match stream.peek(&mut buffer).await {
+                Ok(p) => p,
+                Err(_) => {
+                    pair_cpy.sync.cp_clear.store(true, Ordering::SeqCst);
+                    let mut cp_buffer_cpy = pair_cpy.sync.cp_buffer.write().await;
+                    cp_buffer_cpy.push(id_cpy);
+                    return Ok(());
                 }
-                // if not, move on
-            });
-        }
+            };
+
+            // If it does, pass to state machine
+            if peeked > 0 {
+                let message: NetworkMessage<T> =
+                    NetworkMessage::from_stream(stream.deref_mut(), &mut buffer)
+                        .await
+                        .map_err(|_| Error::msg("Error with stream"))?;
+
+                debug!("Received Message From Network: {:?}", &message);
+
+                recv_state_machine(pair_cp, message).await?;
+            }
+            // if not, move on
+            Ok(())
+        })
+        .await?;
     }
+
+    Ok(())
 }
 
 /// Deals with incoming messages from each [`Connection`] in the [`ConnectionPool`]
@@ -412,21 +548,20 @@ async fn recv_state_machine<T: BlockChainBase>(
 ///
 /// Consumes data from pipeline which instructs it to perform certain actions. This could be to
 /// try and create a connection with another member of the network via a [`TcpStream`].
-async fn outgoing_connections<T: BlockChainBase>(
+async fn outgoing_connections<T: 'static + BlockChainBase>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     let mut unsent_q: Vec<ProcessMessage<T>> = Vec::new();
     loop {
         // Check if there are any jobs in unsent_q
-        info!("CHECKING IF");
         if unsent_q.len() > 0 {
             debug!("Getting ProcessMessage from Queue");
 
-            if let Some((i, ProcessMessage::NewConnection(addr))) = unsent_q
+            if let Some((i, ProcessMessage::NewConnection(_, addr))) = unsent_q
                 .iter()
                 .enumerate()
-                .filter(|(_, m)| matches!(m, ProcessMessage::NewConnection(_)))
+                .filter(|(_, m)| matches!(m, ProcessMessage::NewConnection(_, _)))
                 .take(1)
                 .next()
             {
@@ -444,18 +579,33 @@ async fn outgoing_connections<T: BlockChainBase>(
                 unsent_q.remove(i);
             }
         }
+
+        let num_conns: usize = pair.sync.cp_size.load(Ordering::SeqCst);
+
+        if num_conns == 0 && pair.node.account.profile.lookup_address.is_some() {
+            match general_lookup(
+                Arc::clone(&pair),
+                pair.node.account.profile.lookup_address.clone().unwrap(),
+            )
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    error!("GENERAL LOOKUP FAILED: {}", e);
+                    sleep(Duration::from_millis(10000)).await;
+                }
+            };
+        }
+
         info!("CHECKING PERMIT");
         // Wait until there is something in the pipeline
         pair.sync.claim_permit().await;
         info!("CLAIMED PERMIT");
 
-        let num_conns: usize = async {
-            let unlocked_map = connect_pool.map.read().await;
-            unlocked_map.len()
-        }
-        .await;
+        let num_conns: usize = pair.sync.cp_size.load(Ordering::SeqCst);
+
         debug!("NUMBER OF CONNS: {}", num_conns);
-        // Read pipeline for new messages
+        // Read pipeline for s
         let mut rx = pair.sync.outbound_channel.1.write().await;
         // When new message comes through pipeline
         if let Some(m) = rx.recv().await {
@@ -471,20 +621,39 @@ async fn outgoing_connections<T: BlockChainBase>(
                         unsent_q.push(m.clone());
                         continue;
                     }
-                    send_all(net_mess.clone(), Arc::clone(&connect_pool)).await
+                    match send_all(
+                        Arc::clone(&pair),
+                        net_mess.clone(),
+                        Arc::clone(&connect_pool),
+                    )
+                    .await
+                    {
+                        Ok(_) => debug!("MESSAGE SENDING SUCCESS"),
+                        Err(e) => error!("MESSAGE SENDING ERROR: {}", e),
+                    };
                 }
-                ProcessMessage::NewConnection(addr) => {
-                    create_connection::<T>(
+                ProcessMessage::NewConnection(id, addr) => {
+                    match create_connection::<T>(
                         Arc::clone(&pair),
                         String::from(addr),
                         Arc::clone(&connect_pool),
                     )
                     .await
+                    {
+                        Ok(_) => debug!("CONNECTION CREATION SUCCESS"),
+                        Err(e) => {
+                            if let Some(lookup_addr) =
+                                pair.node.account.profile.lookup_address.clone()
+                            {
+                                lookup_strike::<T>(lookup_addr, id.clone()).await?;
+                            }
+                            error!("CONNECTION CREATION FAILED: {}", e)
+                        }
+                    }
                 }
                 _ => unreachable!(),
-            }?
+            }
         }
-        info!("AFTER IF");
     }
 }
 
@@ -493,18 +662,28 @@ async fn outgoing_connections<T: BlockChainBase>(
 /// Gets a [`NetworkMessage`] and either floods all connections with the message
 /// that is being sent, or will send it to all connected nodes
 async fn send_all<T: BlockChainBase>(
+    pair: Arc<UserPair<T>>,
     message: NetworkMessage<T>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
     debug!("Sending message to all connected participants");
     let conn_map = connect_pool.map.read().await;
-    for (_, conn) in conn_map.iter() {
+    for (id, conn) in conn_map.iter() {
         let tcp = conn.get_tcp();
         let mut stream = tcp.write.write().await;
 
         debug!("Sending message to: {:?}", tcp.addr);
 
-        send_message(stream.deref_mut(), message.clone()).await?;
+        match send_message(stream.deref_mut(), message.clone()).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                error!("ERROR SENDING TO: {}", id);
+                pair.sync.cp_clear.store(true, Ordering::SeqCst);
+                let mut cp_buffer_cpy = pair.sync.cp_buffer.write().await;
+                cp_buffer_cpy.push(id.clone());
+                Err(e)
+            }
+        }?;
     }
     Ok(())
 }
@@ -542,9 +721,14 @@ async fn create_connection<T: BlockChainBase>(
     send_message(&mut stream, bc_mess).await?;
 
     // Add to map
-    connect_pool
+    match connect_pool
         .add(Connection::new(stream, role, Some(pub_key)), id)
-        .await;
-
-    Ok(())
+        .await
+    {
+        Ok(_) => {
+            pair.sync.cp_size.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }

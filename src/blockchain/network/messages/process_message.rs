@@ -8,6 +8,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProcessMessage<T> {
     Blank,
-    NewConnection(String),
+    NewConnection(u128, String),
     SendMessage(NetworkMessage<T>),
 }

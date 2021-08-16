@@ -14,6 +14,7 @@ fn account_sign_event() {
             priv_key: None,
             block_size: None,
             lookup_address: None,
+            lookup_filter: None,
         },
     );
     let event: Event<Data> = user.new_event(Data::GroupMessage(String::from("Hello")));

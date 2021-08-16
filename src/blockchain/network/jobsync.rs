@@ -1,7 +1,7 @@
 use crate::blockchain::{network::messages::ProcessMessage, Block, BlockChainBase};
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Error, Result};
 use tokio::sync::{
@@ -26,6 +26,9 @@ pub struct JobSync<T: BlockChainBase> {
     ),
     pub app_permission: bool,
     pub app_notify: Notify,
+    pub cp_clear: AtomicBool,
+    pub cp_buffer: RwLock<Vec<u128>>,
+    pub cp_size: AtomicUsize,
 }
 
 impl<T: BlockChainBase> JobSync<T> {
@@ -42,6 +45,9 @@ impl<T: BlockChainBase> JobSync<T> {
             app_channel: (wtx, RwLock::new(wrx)),
             app_permission,
             app_notify: Notify::new(),
+            cp_clear: AtomicBool::new(false),
+            cp_buffer: RwLock::new(Vec::new()),
+            cp_size: AtomicUsize::new(0),
         }
     }
 

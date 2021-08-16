@@ -145,7 +145,7 @@ pub async fn application_logic(user_pair: Arc<UserPair<Data>>) -> Result<()> {
     let _fut = tokio::spawn(async move {
         loop {
             // Random sleep
-            sleep(Duration::from_millis(1000)).await;
+            sleep(Duration::from_millis(10000)).await;
             // Create message
             let message = String::from("Hello");
             // Write to outbound
