@@ -9,13 +9,15 @@ use crate::blockchain::{
     Block, BlockChain, BlockChainBase, Event, UserPair,
 };
 
+use crate::blockchain::userpair::PersistentInformation;
+
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::sync::RwLock;
 
-/// Struct to contain all information about `Node`
+/// Struct to contain all information about [`Node`]
 #[derive(Debug)]
 pub struct Node<T: BlockChainBase> {
     pub account: Account,
@@ -24,17 +26,34 @@ pub struct Node<T: BlockChainBase> {
 }
 
 impl<T: BlockChainBase> Node<T> {
-    pub fn new(role: Role, profile: Profile) -> Self {
+    /// Creats a new [`Node`] instance
+    pub fn new(role: Role, profile: Profile, persistent: PersistentInformation) -> Self {
         Self {
-            account: Account::new(role, profile),
+            account: Account::new(
+                role,
+                profile,
+                persistent.pub_key,
+                persistent.priv_key,
+                persistent.id,
+            ),
             blockchain: RwLock::new(BlockChain::new()),
             loose_events: RwLock::new(Vec::new()),
         }
     }
 
-    /// Function to create a blockchain with a genesis block
-    pub async fn genesis(profile: Profile, sync: &JobSync<T>) -> Result<Self> {
-        let account = Account::new(Role::Miner, profile);
+    /// Function to create a [`Blockchain`] with a genesis [`Block`]
+    pub async fn genesis(
+        profile: Profile,
+        sync: &JobSync<T>,
+        persistent: PersistentInformation,
+    ) -> Result<Self> {
+        let account = Account::new(
+            Role::Miner,
+            profile,
+            persistent.pub_key,
+            persistent.priv_key,
+            persistent.id,
+        );
         let mut initial_bc: BlockChain<T> = BlockChain::new();
         let genesis: Block<T> = Block::new(None);
         sync.write_block(genesis.clone()).await?;
@@ -46,7 +65,7 @@ impl<T: BlockChainBase> Node<T> {
         })
     }
 
-    /// Gets the length of the underlying blockchain
+    /// Gets the length of the underlying [`Blockchain`]
     pub async fn bc_len(&self) -> usize {
         let unlocked = self.blockchain.read().await;
         unlocked.len()
@@ -58,7 +77,7 @@ impl<T: BlockChainBase> Node<T> {
         unlocked.chain_overlap(chain)
     }
 
-    /// Determines if a given block is in the underlying [`BlockChain']
+    /// Determines if a given [`Block`] is in the underlying [`BlockChain']
     pub async fn in_chain(&self, block: &Block<T>) -> bool {
         let unlocked = self.blockchain.read().await;
         unlocked.in_chain(block)

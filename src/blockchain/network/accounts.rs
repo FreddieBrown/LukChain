@@ -5,7 +5,6 @@ use crate::blockchain::{config::Profile, BlockChainBase, Event};
 use std::str::FromStr;
 
 use anyhow::{Error, Result};
-use rand::prelude::*;
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -28,20 +27,14 @@ pub enum Role {
 }
 
 impl Account {
-    pub fn new(role: Role, profile: Profile) -> Self {
-        let mut rng = rand::thread_rng();
-        let pub_key: RsaPublicKey;
-        let priv_key: RsaPrivateKey;
+    pub fn new(
+        role: Role,
+        profile: Profile,
+        pub_key: RsaPublicKey,
+        priv_key: RsaPrivateKey,
+        id: u128,
+    ) -> Self {
         let profile_use = profile.clone();
-
-        let (pub_key, priv_key): (RsaPublicKey, RsaPrivateKey) =
-            if profile_use.pub_key.is_some() && profile_use.priv_key.is_some() {
-                (profile_use.pub_key.unwrap(), profile_use.priv_key.unwrap())
-            } else {
-                priv_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate a key");
-                pub_key = RsaPublicKey::from(&priv_key);
-                (pub_key, priv_key)
-            };
 
         let block_size: usize = if profile_use.block_size.is_some() {
             profile_use.block_size.unwrap()
@@ -52,7 +45,7 @@ impl Account {
         debug!("Generated RSA Pair");
 
         Self {
-            id: rng.gen(),
+            id,
             role,
             block_size,
             pub_key,
