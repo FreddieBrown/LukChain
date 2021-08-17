@@ -90,26 +90,23 @@ impl Account {
     }
 
     /// Given encrypted data, decrypts it using own private key
-    pub fn decrypt_msg(&self, enc_data: Vec<u8>) -> String {
+    pub fn decrypt_msg(&self, enc_data: &Vec<u8>) -> Vec<u8> {
         debug!("Decrypting Message: {:?}", &enc_data);
 
         let padding = PaddingScheme::new_pkcs1v15_encrypt();
-        let dec_data = self
-            .priv_key
-            .decrypt(padding, &enc_data)
-            .expect("failed to decrypt");
-
-        String::from_utf8(dec_data).unwrap()
+        self.priv_key
+            .decrypt(padding, enc_data)
+            .expect("failed to decrypt")
     }
 
     /// Given a public key, encrypts a vector of bytes
-    pub fn encrypt_msg(&self, data: Vec<u8>, pub_key: &RsaPublicKey) -> Vec<u8> {
+    pub fn encrypt_msg(&self, data: &Vec<u8>, pub_key: &RsaPublicKey) -> Vec<u8> {
         debug!("Encrypting Message: {:?}", &data);
 
         let mut rng = rand::thread_rng();
         let padding = PaddingScheme::new_pkcs1v15_encrypt();
         pub_key
-            .encrypt(&mut rng, padding, &data)
+            .encrypt(&mut rng, padding, data)
             .expect("failed to encrypt")
     }
 }

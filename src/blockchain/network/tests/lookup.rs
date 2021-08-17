@@ -476,6 +476,42 @@ async fn test_lookup_request_4_less_in_role() {
     abort_handle.abort();
 }
 
+#[tokio::test]
+#[traced_test]
+async fn test_lookup_strike() {
+    let (abort_handle, abort_registration) = AbortHandle::new_pair();
+
+    let _future = Abortable::new(
+        tokio::spawn(async move {
+            // Startup LookUp Node
+            lookup_run::<Data>(Some(8188)).await.unwrap();
+        }),
+        abort_registration,
+    );
+
+    // Register Nodes
+    tokio::spawn(async move {
+        connect_test(1, String::from("127.0.0.1:8188"), Role::User).await;
+    })
+    .await
+    .unwrap();
+
+    tokio::spawn(async move {
+        // Register details with LookUp node
+        let lookup_addr = "127.0.0.1:8188";
+
+        let mut stream: TcpStream = TcpStream::connect(lookup_addr).await.unwrap();
+
+        // Send a strike message
+        let strike_message = NetworkMessage::<Data>::new(MessageData::Strike(1));
+        send_message(&mut stream, strike_message).await.unwrap();
+    })
+    .await
+    .unwrap();
+
+    abort_handle.abort();
+}
+
 async fn connect_test(id: u128, lookup_addr: String, role: Role) {
     // Connect to the LookUp
     let mut buffer = [0_u8; 4096];
