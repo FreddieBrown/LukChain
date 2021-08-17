@@ -1,4 +1,4 @@
-///! Module for messages sent in the network
+//! Module for messages sent in the network
 mod network_message;
 mod process_message;
 pub mod traits;

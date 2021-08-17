@@ -11,22 +11,31 @@ use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
 #[derive(Debug)]
+/// Contains all connections for node
 pub struct ConnectionPool {
+    /// Underlying data structure holding [`Connection`]s
     pub map: RwLock<HashMap<u128, Connection>>,
 }
 
 #[derive(Debug)]
+/// Struct representing each connection to external node
 pub struct Connection {
+    /// Both halves of [`TcpStream`]
     pub stream: Arc<Halves>,
-    pub alive: bool,
+    /// [`Role`] of connection
     pub role: Role,
+    /// Public Key of connected node (if it is known)
     pub pub_key: Option<RsaPublicKey>,
 }
 
 #[derive(Debug)]
+/// Struct defining both halves of [`TcpStream`]
 pub struct Halves {
+    /// Read half of [`TcpStream`]
     pub read: RwLock<OwnedReadHalf>,
+    /// Write half of [`TcpStream`]
     pub write: RwLock<OwnedWriteHalf>,
+    /// Address of connected node
     pub addr: Option<SocketAddr>,
 }
 
@@ -84,7 +93,6 @@ impl Connection {
         let stream = Halves::new(conn);
         Self {
             stream: Arc::new(stream),
-            alive: true,
             role,
             pub_key,
         }
@@ -100,6 +108,10 @@ impl Connection {
 }
 
 impl Halves {
+    /// Creates new instance of Halves using a provided [`TcpStream`]
+    ///
+    /// Takes a [`TcpStream`] and splits it, before including them in instance of [`Halves`]
+    /// and returning it.
     pub fn new(stream: TcpStream) -> Self {
         let addr = match stream.peer_addr() {
             Ok(a) => Some(a),

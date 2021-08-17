@@ -154,6 +154,7 @@ async fn strike(id: u128, address_table: AddressTable) -> Result<()> {
         .collect();
 
     for (key, size) in datas {
+        assert!(size > 0);
         if size > 10 {
             unlocked_table.remove(&key);
             debug!("REMOVING: {}", &key);

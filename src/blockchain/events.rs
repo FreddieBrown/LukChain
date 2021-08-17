@@ -17,20 +17,32 @@ use serde::{Deserialize, Serialize};
 /// is contained within it.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Event<T> {
+    /// ID of node which created [`Event`]
     pub made_by: u128,
+    /// Central information of [`Event`]
     pub data: T,
+    /// Random value to ensure uniqueness
     pub nonce: u128,
+    /// Mechanism to provide validity of [`Event`]
     pub signature: Option<Vec<u8>>,
+    /// Time [`Event`] was created since Epoch
     pub created_at: Duration,
 }
 
 /// Basic struct to show what can be stored on the [`BlockChain`]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Data {
-    // Need to encrypt data in message using target public key
+    /// Message to send to specific user. Data is encrypted
     IndividualMessage(u128, Vec<u8>),
+    /// Message to be read by anyone
     GroupMessage(String),
-    NewUser { id: u128, pub_key: RsaPublicKey },
+    /// Adds the creation of a new node to the [`BlockChain`]
+    NewUser {
+        /// ID of new user
+        id: u128,
+        /// Public Key of new user
+        pub_key: RsaPublicKey,
+    },
 }
 
 impl<T: BlockChainBase> Event<T> {
@@ -56,10 +68,8 @@ impl<T: BlockChainBase> Event<T> {
         return Vec::from(hasher.result_str().as_bytes());
     }
 
+    /// Checks the validity of the [`Event`]
     pub fn execute(&self, foreign_pub_key: Option<&RsaPublicKey>) -> bool {
-        // self.data.execute(priv_key, id);
-        // Write back data to app logic
-
         if self.signature.is_some() {
             self.verify_sign(foreign_pub_key.unwrap())
         } else {
@@ -67,10 +77,12 @@ impl<T: BlockChainBase> Event<T> {
         }
     }
 
+    /// Adds signature to the [`Event`]
     pub fn sign(&mut self, signature: Option<Vec<u8>>) {
         self.signature = signature;
     }
 
+    /// Verifies the associated signature in the [`Event`]
     pub fn verify_sign(&self, pub_key: &RsaPublicKey) -> bool {
         let hash = self.calculate_hash();
         if let Some(s) = self.signature.clone() {

@@ -11,23 +11,35 @@ use tokio::sync::{
 use tracing::debug;
 
 /// Synchronisation struct to maintain the job queue
+#[derive(Debug)]
 pub struct JobSync<T: BlockChainBase> {
+    /// Set of nonces wtinesses by node
     pub nonce_set: RwLock<HashSet<u128>>,
+    /// Access permits for outbound_channel
     pub permits: AtomicUsize,
+    /// Number of waiting threads for access to outbound_channel
     pub waiters: AtomicUsize,
+    /// outbound_channel notifier
     pub notify: Notify,
+    /// Channel used to sent [`ProcessMessage`]
     pub outbound_channel: (
         UnboundedSender<ProcessMessage<T>>,
         RwLock<UnboundedReceiver<ProcessMessage<T>>>,
     ),
+    /// Channel used to send [`Block`] to app logic
     pub app_channel: (
         UnboundedSender<Block<T>>,
         RwLock<UnboundedReceiver<Block<T>>>,
     ),
+    /// Permission bool to determine if blocks should be written back
     pub app_permission: bool,
+    /// Notifier for app_channel
     pub app_notify: Notify,
+    /// Flag to alert whether [`ConnectionPool`] has clearable connections
     pub cp_clear: AtomicBool,
+    /// Connections to remove from the [`ConnectionPool`]
     pub cp_buffer: RwLock<Vec<u128>>,
+    /// Size of the [`ConnectionPool`]
     pub cp_size: AtomicUsize,
 }
 
@@ -86,6 +98,7 @@ impl<T: BlockChainBase> JobSync<T> {
         );
     }
 
+    /// Writes block back to the app logic using channel
     pub async fn write_block(&self, block: Block<T>) -> Result<()> {
         if self.app_permission {
             // let mut wb_unlocked = self.outbound_channel.0;
