@@ -461,9 +461,16 @@ async fn recv_state_machine<T: BlockChainBase>(
                         if unlocked_events.len() >= thresh {
                             debug!("Building new block");
                             let last_hash = bc_unlocked.last_hash();
+
+                            // Create new block and add to chain
                             let mut block: Block<T> = Block::new(last_hash);
                             block.add_events(unlocked_events.clone());
                             bc_unlocked.append(block.clone(), Arc::clone(&pair)).await?;
+
+                            // Write updated chain to file
+                            bc_unlocked.save()?;
+
+                            // Reset events vector
                             *unlocked_events = Vec::new();
                             ns_unlocked.insert(e.nonce);
                             ns_unlocked.insert(block.nonce);
@@ -528,12 +535,20 @@ async fn recv_state_machine<T: BlockChainBase>(
             // Check if valid
             if bc.validate_chain().is_ok() {
                 debug!("New blockchain is valid");
+
                 // If valid, check if it is a subchain of current blockchain
                 if bc.len() > pair.node.bc_len().await && pair.node.chain_overlap(&bc).await > 0.5 {
                     // If longer and contains more than half of original chain, replace
                     info!("New blockchain received, old Blockchain replaced");
                     let mut bc_unlocked = pair.node.blockchain.write().await;
-                    *bc_unlocked = bc.clone();
+
+                    // Set new save blockchain location to one of previous blockchain
+                    let mut new_bc = bc.clone();
+                    new_bc.set_save_location(bc_unlocked.save_location());
+
+                    // Save new blockchain
+                    *bc_unlocked = new_bc;
+                    bc_unlocked.save()?;
                 }
                 // If shorter, ignore
             }
@@ -616,6 +631,7 @@ async fn outgoing_connections<T: 'static + BlockChainBase>(
 
             match &m {
                 ProcessMessage::SendMessage(net_mess) => {
+                    // TODO: If Miner, and event is being sent, add it to block queue
                     if num_conns == 0 {
                         debug!("No connections, so adding to unsent queue");
                         unsent_q.push(m.clone());

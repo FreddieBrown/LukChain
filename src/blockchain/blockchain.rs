@@ -3,6 +3,8 @@ use crate::blockchain::{events::Event, BlockChainBase, UserPair};
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs::File;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -19,6 +21,8 @@ pub struct BlockChain<T> {
     pub users: HashMap<u128, RsaPublicKey>,
     pub created_at: Duration,
     pending_events: Vec<Event<T>>,
+    #[serde(skip)]
+    blc_location: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -32,14 +36,37 @@ pub struct Block<T> {
 
 impl<T: BlockChainBase> BlockChain<T> {
     /// Creates a new [`Blockchain`] instance
-    pub fn new() -> Self {
-        Self {
-            chain: Vec::new(),
-            users: HashMap::new(),
-            created_at: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap(),
-            pending_events: Vec::new(),
+    pub fn new(blockchain_path: Option<String>) -> Self {
+        let path: String = if let Some(pt) = blockchain_path {
+            pt
+        } else {
+            String::from("./blockchain.bin")
+        };
+
+        let mut pathbuf = PathBuf::new();
+        pathbuf.push(&path);
+
+        if pathbuf.exists() {
+            let mut file = File::open(&path).unwrap();
+            let mut blc: Self = bincode::deserialize_from(&mut file).unwrap();
+            blc.blc_location = Some(path);
+            blc
+        } else {
+            let blc = Self {
+                chain: Vec::new(),
+                users: HashMap::new(),
+                created_at: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap(),
+                pending_events: Vec::new(),
+                blc_location: Some(path.clone()),
+            };
+
+            // Write to [`BlockChain`] file
+            #[cfg(not(test))]
+            blc.save().unwrap();
+
+            blc
         }
     }
 
@@ -71,7 +98,7 @@ impl<T: BlockChainBase> BlockChain<T> {
             // Write back block
             pair.sync.write_block(block.clone()).await?;
 
-            // If valid, append to `Blockchain` and return Ok
+            // If valid, append to [`BlockChain`] and return [`Ok`]
             self.chain.push(block);
         }
 
@@ -120,12 +147,12 @@ impl<T: BlockChainBase> BlockChain<T> {
         self.users.insert(id, pub_key);
     }
 
-    /// Length of underlying blockchain
+    /// Length of underlying [`BlockChain`]
     pub fn len(&self) -> usize {
         self.chain.len()
     }
 
-    /// Calculates the percentage similarity with compared blockchain
+    /// Calculates the percentage similarity with compared [`BlockChain`]
     pub fn chain_overlap(&self, chain: &BlockChain<T>) -> f64 {
         let mut counter = 0;
         for (base, comp) in self.chain.iter().zip(chain.chain.iter()) {
@@ -138,9 +165,29 @@ impl<T: BlockChainBase> BlockChain<T> {
         (counter as f64) / (self.len() as f64)
     }
 
-    /// Check if block is in chain
+    /// Check if [`Block`] is in chain
     pub fn in_chain(&self, block: &Block<T>) -> bool {
         self.chain.iter().filter(|b| b == &block).count() > 0
+    }
+
+    /// Sets the location to write the [`BlockChain`] to
+    pub fn set_save_location(&mut self, location: Option<String>) {
+        self.blc_location = location;
+    }
+
+    /// Returns the location of the  [`BlockChain`] in the filesystem
+    pub fn save_location(&self) -> Option<String> {
+        self.blc_location.clone()
+    }
+
+    /// Writes the current state of the [`BlockChain`] to its specified file
+    pub fn save(&self) -> Result<()> {
+        if let Some(loc) = self.blc_location.clone() {
+            let mut file = File::create(loc)?;
+
+            bincode::serialize_into(&mut file, self)?;
+        }
+        Ok(())
     }
 }
 

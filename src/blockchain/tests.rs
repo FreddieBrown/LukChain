@@ -12,7 +12,7 @@ use std::sync::Arc;
 // Basic tests
 #[test]
 fn create_blockchain() {
-    let bc: BlockChain<Data> = BlockChain::new();
+    let bc: BlockChain<Data> = BlockChain::new(None);
     assert!(bc.chain.len() == 0);
     assert!(bc.users.len() == 0);
 }
@@ -37,13 +37,17 @@ fn add_event_to_block() {
 
 #[tokio::test]
 async fn add_block_to_blockchain() {
-    let mut bc: BlockChain<Data> = BlockChain::new();
+    let mut bc: BlockChain<Data> = BlockChain::new(None);
     let mut block: Block<Data> = Block::new(None);
     let event: Event<Data> = Event::new(10, Data::GroupMessage(String::from("Hello")));
     let pair: Arc<UserPair<Data>> = Arc::new(
-        UserPair::new(Role::User, Profile::new(None, None, None, None), false)
-            .await
-            .unwrap(),
+        UserPair::new(
+            Role::User,
+            Profile::new(None, None, None, None, None),
+            false,
+        )
+        .await
+        .unwrap(),
     );
     block.add_event(event);
     assert!(block.get_event_count() == 1);
@@ -64,12 +68,7 @@ fn sign_event_with_key() {
 
     let user: Account = Account::new(
         Role::User,
-        Profile {
-            block_size: None,
-            lookup_address: None,
-            lookup_filter: None,
-            user_data: None,
-        },
+        Profile::new(None, None, None, None, None),
         pub_key,
         priv_key,
         id,
@@ -91,12 +90,7 @@ fn sign_message_with_wrong_key() {
 
     let user: Account = Account::new(
         Role::User,
-        Profile {
-            block_size: None,
-            lookup_address: None,
-            lookup_filter: None,
-            user_data: None,
-        },
+        Profile::new(None, None, None, None, None),
         pub_key,
         priv_key,
         id,
@@ -111,12 +105,7 @@ fn sign_message_with_wrong_key() {
 
     let user1: Account = Account::new(
         Role::User,
-        Profile {
-            block_size: None,
-            lookup_address: None,
-            lookup_filter: None,
-            user_data: None,
-        },
+        Profile::new(None, None, None, None, None),
         pub_key2,
         priv_key2,
         id2,

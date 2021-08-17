@@ -20,12 +20,7 @@ fn account_sign_event() {
 
     let user: Account = Account::new(
         Role::User,
-        Profile {
-            block_size: None,
-            lookup_address: None,
-            lookup_filter: None,
-            user_data: None,
-        },
+        Profile::new(None, None, None, None, None),
         pub_key,
         priv_key,
         id,

@@ -12,7 +12,8 @@ pub struct Profile {
     pub block_size: Option<usize>,
     pub lookup_address: Option<String>,
     pub lookup_filter: Option<Role>,
-    pub user_data: Option<String>,
+    pub user_location: Option<String>,
+    pub bc_location: Option<String>,
 }
 
 impl Profile {
@@ -20,13 +21,15 @@ impl Profile {
         block_size: Option<usize>,
         lookup_address: Option<String>,
         lookup_filter: Option<Role>,
-        user_data: Option<String>,
+        user_location: Option<String>,
+        bc_location: Option<String>,
     ) -> Self {
         Self {
             block_size,
             lookup_address,
             lookup_filter,
-            user_data,
+            user_location,
+            bc_location,
         }
     }
 }

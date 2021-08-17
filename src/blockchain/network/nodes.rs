@@ -31,12 +31,12 @@ impl<T: BlockChainBase> Node<T> {
         Self {
             account: Account::new(
                 role,
-                profile,
+                profile.clone(),
                 persistent.pub_key,
                 persistent.priv_key,
                 persistent.id,
             ),
-            blockchain: RwLock::new(BlockChain::new()),
+            blockchain: RwLock::new(BlockChain::new(profile.bc_location.clone())),
             loose_events: RwLock::new(Vec::new()),
         }
     }
@@ -47,6 +47,8 @@ impl<T: BlockChainBase> Node<T> {
         sync: &JobSync<T>,
         persistent: PersistentInformation,
     ) -> Result<Self> {
+        let mut initial_bc: BlockChain<T> = BlockChain::new(profile.bc_location.clone());
+
         let account = Account::new(
             Role::Miner,
             profile,
@@ -54,10 +56,14 @@ impl<T: BlockChainBase> Node<T> {
             persistent.priv_key,
             persistent.id,
         );
-        let mut initial_bc: BlockChain<T> = BlockChain::new();
+
         let genesis: Block<T> = Block::new(None);
         sync.write_block(genesis.clone()).await?;
         initial_bc.chain.push(genesis);
+
+        #[cfg(not(test))]
+        initial_bc.save()?;
+
         Ok(Self {
             account,
             blockchain: RwLock::new(initial_bc),

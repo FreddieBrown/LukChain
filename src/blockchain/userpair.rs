@@ -5,8 +5,7 @@ pub use crate::blockchain::{
 };
 
 use std::fs::File;
-use std::io::Read;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -21,7 +20,8 @@ pub struct UserPair<T: BlockChainBase> {
 
 impl<T: BlockChainBase> UserPair<T> {
     pub async fn new(role: Role, profile: Profile, write_back: bool) -> Result<Self> {
-        let pinfo: PersistentInformation = PersistentInformation::new(profile.user_data.clone());
+        let pinfo: PersistentInformation =
+            PersistentInformation::new(profile.user_location.clone());
         let sync = JobSync::new(write_back);
         let node: Node<T> = if matches!(role, Role::Miner) {
             Node::genesis(profile.clone(), &sync, pinfo).await?
