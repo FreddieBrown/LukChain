@@ -28,24 +28,24 @@ This should follow the following structure:
 ```
 [config]
 [[profiles]]
-pub_key = ".."
-priv_key = ".."
 block_size = 10
-lookup_address = "127.0.0.1:8080"
-lookup_filter = User
+lookup_address = "127.0.0.1:8181"
+lookup_filter = "user"
+user_location = "user1.json"
+bc_location = "blockchain1.bin"
 
 [[profiles]]
-pub_key = ".."
-priv_key = ".."
 block_size = 20
-lookup_address = "127.0.0.1:8080"
-lookup_filter = Miner
+lookup_address = "127.0.0.1:8181"
+lookup_filter = "miner"
+user_location = "user2.json"
+bc_location = "blockchain2.bin"
 ```
 
 Each field can be ommitted if not needed. The use of each field in the program is:
 
-- `pub_key`: RSA Public Key. If public key is defined, must also define a private key.
-- `priv_key`: RSA Private Key. Like public key, private key also needs an public key to be used.
 - `block_size`: If the role chosen is `Miner`, this option will define the size of blocks that it will add to the blockchain and will distribute to connected nodes.
 - `lookup_address`: Address to contact initially to obtain addresses of other nodes in the network to connect to.
 - `lookup_filter`: Included in message to LookUp and allows filtering of address book members based on their role in the network.
+- `user_location`: Location where information about user is stored when it is generated or needs to be retrieved on startup
+- `bc_location`: Location of binary file containing local copy of blockchain
