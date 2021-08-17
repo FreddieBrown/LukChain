@@ -13,12 +13,20 @@ use rand::prelude::*;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 
+/// Wrapper struct containing information needed for each user
+#[derive(Debug)]
 pub struct UserPair<T: BlockChainBase> {
+    /// Synchronisation Struct for blockchain
     pub sync: JobSync<T>,
+    /// Information about network node
     pub node: Node<T>,
 }
 
 impl<T: BlockChainBase> UserPair<T> {
+    /// Creates a new instance of the [`UserPair`] struct
+    ///
+    /// Gets information stored for the participant or generates it.
+    /// This is passed up and used to setup the [`UserPair`] on startup.
     pub async fn new(role: Role, profile: Profile, write_back: bool) -> Result<Self> {
         let pinfo: PersistentInformation =
             PersistentInformation::new(profile.user_location.clone());

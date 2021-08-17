@@ -16,9 +16,13 @@ use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+/// Struct to define local copy of blockchain
 pub struct BlockChain<T> {
+    /// Contains all [`Block`] instances in chain
     pub chain: Vec<Block<T>>,
+    /// All known participants in network
     pub users: HashMap<u128, RsaPublicKey>,
+    /// Time since Epoch that [`BlockChain`] was created
     pub created_at: Duration,
     pending_events: Vec<Event<T>>,
     #[serde(skip)]
@@ -26,11 +30,17 @@ pub struct BlockChain<T> {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+/// Encapsulation of groups of events mined and stored on [`BlockChain`]
 pub struct Block<T> {
+    /// Events contained within [`Block`]
     pub events: Vec<Event<T>>,
+    /// Hash of preceding [`Block`] in [`BlockChain`]
     pub prev_hash: Option<String>,
+    /// Hash of [`Block`]
     pub hash: Option<String>,
+    /// Random value for each instance
     pub nonce: u128,
+    /// Time [`Block`] was created at since Epoch
     pub created_at: Duration,
 }
 
@@ -142,6 +152,7 @@ impl<T: BlockChainBase> BlockChain<T> {
             .fold(false, |a, b| (b.events.contains(event)) || a)
     }
 
+    /// Adds a new user to [`BlockChain`]
     pub fn new_user(&mut self, id: u128, pub_key: RsaPublicKey) {
         // TODO: In future generate user id and return it
         self.users.insert(id, pub_key);
@@ -206,6 +217,7 @@ impl<T: BlockChainBase> Block<T> {
         }
     }
 
+    /// Adds multiple events to [`Block`]
     pub fn add_events(&mut self, events: Vec<Event<T>>) {
         self.events = events;
         self.hash = Some(self.calculate_hash());
@@ -256,6 +268,8 @@ impl<T: BlockChainBase> Block<T> {
         self.events.len()
     }
 
+    /// Goes through each [`Event`] in [`Block`], checks validity and
+    /// information each contains
     pub fn execute(&self, users: &HashMap<u128, RsaPublicKey>) -> bool {
         // TODO: Check for nonces that have already been used
         self.events.iter().fold(true, |acc, event| {

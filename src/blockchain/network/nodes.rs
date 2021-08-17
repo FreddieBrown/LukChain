@@ -20,8 +20,11 @@ use tokio::sync::RwLock;
 /// Struct to contain all information about [`Node`]
 #[derive(Debug)]
 pub struct Node<T: BlockChainBase> {
+    /// Information about the node
     pub account: Account,
+    /// Local copy of [`BlockChain`] stored by node
     pub blockchain: RwLock<BlockChain<T>>,
+    /// Events which haven't been included in [`Block`] yet. Only used by [`Role::Miner`]
     pub loose_events: RwLock<Vec<Event<T>>>,
 }
 
