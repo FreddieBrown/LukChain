@@ -116,7 +116,7 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
 /// Node connects to specific [`LookUp`] node and sends a [`GeneralAddrRequest`].
 /// The node will return the result of the query depending on what is contained within
 /// its database.
-pub async fn general_lookup<T: 'static + BlockChainBase>(
+async fn general_lookup<T: 'static + BlockChainBase>(
     pair: Arc<UserPair<T>>,
     address: String,
 ) -> Result<()> {
@@ -169,10 +169,7 @@ pub async fn general_lookup<T: 'static + BlockChainBase>(
 }
 
 /// Connects to the lookup server and sends a [`Strike`] message
-pub async fn lookup_strike<T: 'static + BlockChainBase>(
-    address: String,
-    conn_id: u128,
-) -> Result<()> {
+async fn lookup_strike<T: 'static + BlockChainBase>(address: String, conn_id: u128) -> Result<()> {
     debug!("SENDING STRIKE");
     debug!("Creating LookUp Connection with: {}", address);
     // Open connection
@@ -188,7 +185,7 @@ pub async fn lookup_strike<T: 'static + BlockChainBase>(
     Ok(())
 }
 
-pub async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
+async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
@@ -215,7 +212,7 @@ pub async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
 ///
 /// Function is passed an address and a port and it will attempt to
 /// create a TCP connection with the node at that address
-pub async fn create_connection<T: BlockChainBase>(
+async fn create_connection<T: BlockChainBase>(
     pair: Arc<UserPair<T>>,
     address: String,
     connect_pool: Arc<ConnectionPool>,
@@ -260,7 +257,7 @@ pub async fn create_connection<T: BlockChainBase>(
 ///
 /// Gets a [`NetworkMessage`] and either floods all connections with the message
 /// that is being sent, or will send it to all connected nodes
-pub async fn send_all<T: BlockChainBase>(
+async fn send_all<T: BlockChainBase>(
     pair: Arc<UserPair<T>>,
     message: NetworkMessage<T>,
     connect_pool: Arc<ConnectionPool>,
@@ -292,7 +289,7 @@ pub async fn send_all<T: BlockChainBase>(
 /// Listens to a inbound port and accepts connections coming from other
 /// participants in the network. Takes the connections and inserts them
 /// into the `connect_pool`.
-pub async fn incoming_connections<T: 'static + BlockChainBase>(
+async fn incoming_connections<T: 'static + BlockChainBase>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
     listener: TcpListener,
@@ -314,7 +311,7 @@ pub async fn incoming_connections<T: 'static + BlockChainBase>(
 ///
 /// Function is given a [`TcpStream`]. It then gets the ID from the
 /// stream so the [`Connection`] can be identified in the [`ConnectionPool`].
-pub async fn process_connection<T: 'static + BlockChainBase>(
+async fn process_connection<T: 'static + BlockChainBase>(
     mut stream: TcpStream,
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
@@ -351,7 +348,7 @@ pub async fn process_connection<T: 'static + BlockChainBase>(
 }
 
 /// Finds the [`MessageData::InitialID`] in a [`TcpStream`]
-pub async fn initial_stream_handler<T: BlockChainBase>(
+async fn initial_stream_handler<T: BlockChainBase>(
     stream: &mut TcpStream,
 ) -> Option<(u128, RsaPublicKey, Role)> {
     let mut buffer = [0_u8; 4096];
@@ -368,7 +365,7 @@ pub async fn initial_stream_handler<T: BlockChainBase>(
 ///
 /// Goes through all connections and checks if they have sent anything. If the stream is shutdown
 /// then the [`Connection`] is removed from the [`ConnectionPool`].
-pub async fn check_connections<T, F, Fut>(
+async fn check_connections<T, F, Fut>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
     state_machine: F,
