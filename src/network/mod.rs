@@ -20,7 +20,7 @@ pub use self::{
     nodes::Node,
 };
 
-use crate::blockchain::BlockChainBase;
+use crate::BlockChainBase;
 
 use anyhow::Result;
 use tokio::io::AsyncWriteExt;

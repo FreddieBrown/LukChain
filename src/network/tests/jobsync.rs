@@ -1,4 +1,4 @@
-use crate::blockchain::{Data, JobSync};
+use crate::{Data, JobSync};
 
 use std::sync::atomic::Ordering;
 

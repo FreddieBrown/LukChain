@@ -1,5 +1,5 @@
 ///! Module which defines the behaviour of the lookup node
-use crate::blockchain::{
+use crate::{
     network::{
         accounts::Role,
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage},

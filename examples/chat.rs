@@ -1,4 +1,4 @@
-use blockchat::blockchain::{
+use blockchat::{
     config::{Config, Profile},
     network::{
         lookup_run,

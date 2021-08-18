@@ -1,5 +1,5 @@
 ///! Functionality for creating sendable messages across network.
-use crate::blockchain::{network::Role, Block, BlockChain, BlockChainBase, Event};
+use crate::{network::Role, Block, BlockChain, BlockChainBase, Event};
 
 use std::fmt::Debug;
 

@@ -1,5 +1,5 @@
 //! Defining base element in the blockchain
-use crate::blockchain::BlockChainBase;
+use crate::BlockChainBase;
 
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime};

@@ -1,5 +1,5 @@
 //! Functionality shared between [`Role::User`] and [`Role::Miner`]
-use crate::blockchain::{
+use crate::{
     network::{
         accounts::Role,
         connections::{Connection, ConnectionPool, Halves},
