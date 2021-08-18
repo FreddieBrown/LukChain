@@ -4,21 +4,15 @@ use crate::blockchain::{
     network::{
         connections::ConnectionPool,
         messages::{MessageData, NetworkMessage, ProcessMessage},
-        participants::shared::{
-            check_connections, clear_connection_pool, incoming_connections, initial_lookup,
-            outgoing_connections, setup,
-        },
+        participants::shared::{inbound, initial_lookup, outgoing_connections, setup},
     },
     Block, BlockChainBase, Event, UserPair,
 };
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use futures::join;
-use tokio::net::TcpListener;
-use tokio::task;
-use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 /// Main runner function for participant functionality
@@ -49,7 +43,12 @@ pub async fn miners_run<T: 'static + BlockChainBase>(
         };
     }
 
-    let inbound_fut = inbound(Arc::clone(&pair), Arc::clone(&connect_pool), listener);
+    let inbound_fut = inbound(
+        Arc::clone(&pair),
+        Arc::clone(&connect_pool),
+        listener,
+        miner_state_machine,
+    );
 
     let pair_cpy = Arc::clone(&pair);
     let outgoing_fut = tokio::spawn(async move {
@@ -64,54 +63,6 @@ pub async fn miners_run<T: 'static + BlockChainBase>(
         (Err(e1), Err(e2)) => error!("Multiple Errors in futures: {} and {}", e1, e2),
         _ => debug!("All fine!"),
     };
-
-    Ok(())
-}
-
-/// Function to start up functions which deal with inbound
-/// connections and message traffic
-async fn inbound<T: 'static + BlockChainBase + Send>(
-    pair: Arc<UserPair<T>>,
-    connect_pool: Arc<ConnectionPool>,
-    listener: TcpListener,
-) -> Result<()> {
-    // Thread to listen for inbound connections (reactive)
-    //     Put all connections into connect pool
-    let pair_cpy = Arc::clone(&pair);
-    let cp_cpy = Arc::clone(&connect_pool);
-    task::spawn(async move {
-        incoming_connections(pair_cpy, cp_cpy, listener)
-            .await
-            .unwrap()
-    });
-    // Thread to go through all connections and deal with incoming messages (reactive)
-    let _conns: Result<()> = task::spawn(async move {
-        loop {
-            let pair_clone = Arc::clone(&pair);
-            let cp_clone = Arc::clone(&connect_pool);
-            let cp_clear_status = pair_clone.sync.cp_clear.load(Ordering::SeqCst);
-            let cp_size = pair_clone.sync.cp_size.load(Ordering::SeqCst);
-            if cp_clear_status {
-                // Clear connection pool of all dead connections
-                clear_connection_pool(Arc::clone(&pair_clone), Arc::clone(&cp_clone)).await?;
-                pair_clone.sync.cp_clear.store(false, Ordering::SeqCst);
-            }
-
-            if cp_size > 0 {
-                check_connections(
-                    Arc::clone(&pair_clone),
-                    Arc::clone(&cp_clone),
-                    miner_state_machine,
-                )
-                .await?
-            } else {
-                // Sleep for a moment (10 seconds?)
-                debug!("NO CONNECTIONS");
-                sleep(Duration::from_millis(1000)).await;
-            }
-        }
-    })
-    .await?;
 
     Ok(())
 }

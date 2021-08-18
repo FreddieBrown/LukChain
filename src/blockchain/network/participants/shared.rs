@@ -535,3 +535,57 @@ pub async fn outgoing_connections<T: 'static + BlockChainBase>(
         }
     }
 }
+
+/// Function to start up functions which deal with inbound
+/// connections and message traffic
+pub async fn inbound<T, F, Fut>(
+    pair: Arc<UserPair<T>>,
+    connect_pool: Arc<ConnectionPool>,
+    listener: TcpListener,
+    state_machine: F,
+) -> Result<()>
+where
+    T: 'static + BlockChainBase + std::marker::Sync,
+    F: FnOnce(Arc<UserPair<T>>, NetworkMessage<T>) -> Fut + Send + 'static + Copy,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    // Thread to listen for inbound connections (reactive)
+    //     Put all connections into connect pool
+    let pair_cpy = Arc::clone(&pair);
+    let cp_cpy = Arc::clone(&connect_pool);
+    tokio::spawn(async move {
+        incoming_connections(pair_cpy, cp_cpy, listener)
+            .await
+            .unwrap()
+    });
+    // Thread to go through all connections and deal with incoming messages (reactive)
+    let _conns: Result<()> = tokio::spawn(async move {
+        loop {
+            let pair_clone = Arc::clone(&pair);
+            let cp_clone = Arc::clone(&connect_pool);
+            let cp_clear_status = pair_clone.sync.cp_clear.load(Ordering::SeqCst);
+            let cp_size = pair_clone.sync.cp_size.load(Ordering::SeqCst);
+            if cp_clear_status {
+                // Clear connection pool of all dead connections
+                clear_connection_pool(Arc::clone(&pair_clone), Arc::clone(&cp_clone)).await?;
+                pair_clone.sync.cp_clear.store(false, Ordering::SeqCst);
+            }
+
+            if cp_size > 0 {
+                check_connections(
+                    Arc::clone(&pair_clone),
+                    Arc::clone(&cp_clone),
+                    state_machine,
+                )
+                .await?
+            } else {
+                // Sleep for a moment (10 seconds?)
+                debug!("NO CONNECTIONS");
+                sleep(Duration::from_millis(1000)).await;
+            }
+        }
+    })
+    .await?;
+
+    Ok(())
+}
