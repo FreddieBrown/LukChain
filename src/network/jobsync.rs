@@ -1,4 +1,4 @@
-use crate::blockchain::{network::messages::ProcessMessage, Block, BlockChainBase};
+use crate::{network::messages::ProcessMessage, Block, BlockChainBase};
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

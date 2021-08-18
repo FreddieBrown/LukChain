@@ -1,0 +1,14 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+# If you copy one of the examples into a new project, you should be using
+# [dependencies] instead.
+[dev-dependencies]
+luk_chain = { version = "0.0.1", path = "../src"}
+
+[[example]]
+name = "chat"
+path = "chat.rs"

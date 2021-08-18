@@ -1,15 +1,14 @@
 //! Node structure containing all information for application
 
-use crate::blockchain::{
+use crate::{
     config::Profile,
     network::{
         accounts::{Account, Role},
         JobSync,
     },
+    userpair::PersistentInformation,
     Block, BlockChain, BlockChainBase, Event, UserPair,
 };
-
-use crate::blockchain::userpair::PersistentInformation;
 
 use std::fmt::Debug;
 use std::sync::Arc;

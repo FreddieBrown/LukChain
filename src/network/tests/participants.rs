@@ -1,5 +1,8 @@
-use crate::blockchain::network::{participants::shared::*, ConnectionPool, Role};
-use crate::blockchain::{Block, BlockChain, Data, Event, Profile, UserPair};
+use crate::{
+    config::Profile,
+    network::{participants::shared::*, ConnectionPool, Role},
+    Block, BlockChain, Data, Event, UserPair,
+};
 
 use std::net::SocketAddr;
 use std::sync::Arc;

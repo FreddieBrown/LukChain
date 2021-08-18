@@ -1,5 +1,5 @@
 //! Serializable/Deserializable structs to read/write config details for node
-use crate::blockchain::Role;
+use crate::network::Role;
 
 use serde::Deserialize;
 

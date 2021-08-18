@@ -1,4 +1,4 @@
-pub use crate::blockchain::{
+pub use crate::{
     config::Profile,
     network::{JobSync, Node, Role},
     Block, BlockChain, BlockChainBase, Data, Event,

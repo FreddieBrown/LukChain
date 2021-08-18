@@ -1,28 +1,12 @@
-# Blockchat
+# LukChain
 
-Blockchain based chat application
+Generalised BlockChain
 
 Currently uses `nightly` features
 
-## Command Line Interface
-
-```
-BlockChat
-USAGE:
-  blochat [OPTIONS] --log LEVEL [INPUT]
-FLAGS:
-  -h, --help            Prints help information
-OPTIONS:
-  --log LEVEL          Sets logging level
-  --role ROLE          Sets the role of the user in the network
-  --config NUMBER      Sets chosen config (default: 0)
-ARGS:
-  <INPUT>
-```
-
 ## Config
 
-To use `BlockChat`, a `config.toml` file needs to be setup to define different user profiles.
+To use `LukChain`, a `config.toml` file needs to be setup to define different user profiles.
 This should follow the following structure:
 
 ```
@@ -49,3 +33,23 @@ Each field can be ommitted if not needed. The use of each field in the program i
 - `lookup_filter`: Included in message to LookUp and allows filtering of address book members based on their role in the network.
 - `user_location`: Location where information about user is stored when it is generated or needs to be retrieved on startup
 - `bc_location`: Location of binary file containing local copy of blockchain
+
+## Examples
+
+### Chat
+
+To run with cargo: `cargo run --example chat -- --role lookup `
+
+```
+Chat
+USAGE:
+  chat [OPTIONS] --log LEVEL [INPUT]
+FLAGS:
+  -h, --help            Prints help information
+OPTIONS:
+  --log LEVEL          Sets logging level
+  --role ROLE          Sets the role of the user in the network
+  --config NUMBER      Sets chosen config (default: 0)
+ARGS:
+  <INPUT>
+```

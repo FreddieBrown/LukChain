@@ -1,6 +1,6 @@
 //! Information about the participant needed for network participation
 
-use crate::blockchain::{config::Profile, BlockChainBase, Event};
+use crate::{config::Profile, BlockChainBase, Event};
 
 use std::str::FromStr;
 

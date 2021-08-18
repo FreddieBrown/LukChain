@@ -1,8 +1,18 @@
 [package]
-name = "blockchat"
+name = "luk_chain"
 version = "0.1.0"
 authors = ["Freddie Brown <fred@noser.net>"]
+license = "GPL-3.0"
 edition = "2018"
+readme = "README.md"
+description = "Generalised blockchain library"
+repository = "https://github.com/FreddieBrown/LukChat"
+keywords = ["crypto", "blockchain"]
+
+
+[lib]
+name = "luk_chain"
+path = "src/lib.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

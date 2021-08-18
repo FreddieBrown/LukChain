@@ -1,4 +1,4 @@
-use crate::blockchain::{events::Event, BlockChainBase, UserPair};
+use crate::{events::Event, BlockChainBase, UserPair};
 
 use std::cmp::PartialEq;
 use std::collections::HashMap;

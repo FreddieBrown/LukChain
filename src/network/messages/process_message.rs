@@ -1,5 +1,5 @@
 ///! Messages sent between processes so they can trigger actions in other processes
-use crate::blockchain::network::messages::NetworkMessage;
+use crate::network::messages::NetworkMessage;
 
 use std::fmt::Debug;
 

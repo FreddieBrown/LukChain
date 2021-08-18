@@ -1,6 +1,6 @@
 //! Functionality specific to nodes with the [`Role::Miner`] role
 
-use crate::blockchain::{
+use crate::{
     network::{
         messages::{MessageData, NetworkMessage, ProcessMessage},
         participants::shared::{add_block, replace_blockchain},

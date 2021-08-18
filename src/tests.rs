@@ -1,4 +1,4 @@
-use crate::blockchain::{
+use crate::{
     config::Profile,
     events::{Data, Event},
     network::{Account, Role},
