@@ -6,7 +6,7 @@ mod jobsync;
 mod lookup;
 pub mod messages;
 mod nodes;
-mod participants;
+pub mod participants;
 
 #[cfg(test)]
 mod tests;
@@ -18,7 +18,6 @@ pub use self::{
     lookup::lookup_run,
     messages::traits::{ReadLengthPrefix, WriteLengthPrefix},
     nodes::Node,
-    participants::participants_run,
 };
 
 use crate::blockchain::BlockChainBase;

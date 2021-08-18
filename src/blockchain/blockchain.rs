@@ -56,6 +56,7 @@ impl<T: BlockChainBase> BlockChain<T> {
         let mut pathbuf = PathBuf::new();
         pathbuf.push(&path);
 
+        #[cfg(not(test))]
         if pathbuf.exists() {
             let mut file = File::open(&path).unwrap();
             let mut blc: Self = bincode::deserialize_from(&mut file).unwrap();
@@ -73,10 +74,22 @@ impl<T: BlockChainBase> BlockChain<T> {
             };
 
             // Write to [`BlockChain`] file
-            #[cfg(not(test))]
             blc.save().unwrap();
 
             blc
+        }
+
+        #[cfg(test)]
+        {
+            Self {
+                chain: Vec::new(),
+                users: HashMap::new(),
+                created_at: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap(),
+                pending_events: Vec::new(),
+                blc_location: None,
+            }
         }
     }
 

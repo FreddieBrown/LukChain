@@ -3,7 +3,8 @@ use blockchat::blockchain::{
     network::{
         lookup_run,
         messages::{MessageData, NetworkMessage, ProcessMessage},
-        participants_run, Role,
+        participants::{miners_state_machine, runner, users_state_machine},
+        Role,
     },
     Data, Event, UserPair,
 };
@@ -122,9 +123,20 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
             // Start Lookup server functionality
             lookup_run::<Data>(Some(8181)).await?
         }
-        _ => {
+        Role::User => {
             let pair: Arc<UserPair<Data>> = Arc::new(UserPair::new(role, profile, true).await?);
-            let part_fut = participants_run::<Data>(Arc::clone(&pair), None);
+            let part_fut = runner::<Data, _, _>(Arc::clone(&pair), None, users_state_machine);
+            let app_fut = application_logic(Arc::clone(&pair));
+            match join!(part_fut, app_fut) {
+                (Ok(_), Err(e)) => println!("Error: {}", e),
+                (Err(e), Ok(_)) => println!("Error: {}", e),
+                (Err(e1), Err(e2)) => println!("Errors: {} and {}", e1, e2),
+                _ => println!("Everything is fine :)"),
+            }
+        }
+        Role::Miner => {
+            let pair: Arc<UserPair<Data>> = Arc::new(UserPair::new(role, profile, true).await?);
+            let part_fut = runner::<Data, _, _>(Arc::clone(&pair), None, miners_state_machine);
             let app_fut = application_logic(Arc::clone(&pair));
             match join!(part_fut, app_fut) {
                 (Ok(_), Err(e)) => println!("Error: {}", e),
