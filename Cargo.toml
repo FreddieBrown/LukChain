@@ -1,6 +1,8 @@
+cargo-features = ["drain_filter"]
+
 [package]
 name = "luk_chain"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Freddie Brown <fred@noser.net>"]
 license = "GPL-3.0"
 edition = "2018"
