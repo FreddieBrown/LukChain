@@ -3,7 +3,7 @@ use blockchat::blockchain::{
     network::{
         lookup_run,
         messages::{MessageData, NetworkMessage, ProcessMessage},
-        participants::{miners_run, users_run},
+        participants::{miners_state_machine, runner, users_state_machine},
         Role,
     },
     Data, Event, UserPair,
@@ -125,7 +125,7 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
         }
         Role::User => {
             let pair: Arc<UserPair<Data>> = Arc::new(UserPair::new(role, profile, true).await?);
-            let part_fut = users_run::<Data>(Arc::clone(&pair), None);
+            let part_fut = runner::<Data, _, _>(Arc::clone(&pair), None, users_state_machine);
             let app_fut = application_logic(Arc::clone(&pair));
             match join!(part_fut, app_fut) {
                 (Ok(_), Err(e)) => println!("Error: {}", e),
@@ -136,7 +136,7 @@ pub async fn run(role: Role, profile: Profile) -> Result<()> {
         }
         Role::Miner => {
             let pair: Arc<UserPair<Data>> = Arc::new(UserPair::new(role, profile, true).await?);
-            let part_fut = miners_run::<Data>(Arc::clone(&pair), None);
+            let part_fut = runner::<Data, _, _>(Arc::clone(&pair), None, miners_state_machine);
             let app_fut = application_logic(Arc::clone(&pair));
             match join!(part_fut, app_fut) {
                 (Ok(_), Err(e)) => println!("Error: {}", e),

@@ -6,7 +6,7 @@ use crate::blockchain::{
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage, ProcessMessage},
         send_message,
     },
-    BlockChainBase, UserPair,
+    Block, BlockChain, BlockChainBase, Event, UserPair,
 };
 
 use std::future::Future;
@@ -15,6 +15,7 @@ use std::ops::DerefMut;
 use std::sync::{atomic::Ordering, Arc};
 
 use anyhow::{Error, Result};
+use futures::join;
 use rsa::RsaPublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, Duration};
@@ -583,6 +584,110 @@ where
         }
     })
     .await?;
+
+    Ok(())
+}
+
+/// Function to replace the [`BlockChain`] in [`UserPair`]
+pub async fn replace_blockchain<T: 'static + BlockChainBase + std::marker::Sync>(
+    pair: Arc<UserPair<T>>,
+    bc: &BlockChain<T>,
+) -> Result<()> {
+    info!("New blockchain received, old Blockchain replaced");
+    let mut bc_unlocked = pair.node.blockchain.write().await;
+
+    // Set new save blockchain location to one of previous blockchain
+    let mut new_bc = bc.clone();
+    new_bc.set_save_location(bc_unlocked.save_location());
+
+    // Save new blockchain
+    *bc_unlocked = new_bc;
+    bc_unlocked.save()?;
+
+    Ok(())
+}
+
+/// Function to add a new [`Block`] to [`BlockChain`]
+pub async fn add_block<T: 'static + BlockChainBase + std::marker::Sync>(
+    pair: Arc<UserPair<T>>,
+    block: &Block<T>,
+) -> Result<()> {
+    pair.node
+        .add_block(block.clone(), Arc::clone(&pair))
+        .await?;
+    // Drop events contained in block from loose_events
+    let mut unlocked_loose = pair.node.loose_events.write().await;
+    let dropped = unlocked_loose
+        .drain_filter(|x| block.events.contains(x))
+        .collect::<Vec<Event<T>>>();
+
+    debug!("Events found to be in block: {:?}", dropped);
+
+    // pass onto other connected nodes
+    let message: NetworkMessage<T> = NetworkMessage::new(MessageData::Block(block.clone()));
+    let process_message: ProcessMessage<T> = ProcessMessage::SendMessage(message);
+    match pair.sync.outbound_channel.0.send(process_message) {
+        Ok(_) => pair.sync.new_permit(),
+        Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
+    };
+
+    Ok(())
+}
+
+/// Main runner function for participant functionality
+///
+/// Needs to have a defined base datatype for the [`BlockChain`] to
+/// store. The default one in this library is [`Data`]. Also provided
+/// is the ability to pass in a function which can interact with the
+/// [`JobSync`] mechanism. This lets the user build application
+/// logic which can be used to do specific tasks, like create and
+/// send messages to the outgoing thread.
+pub async fn runner<T, F, Fut>(
+    pair: Arc<UserPair<T>>,
+    port: Option<u16>,
+    state_machine: F,
+) -> Result<()>
+where
+    T: 'static + BlockChainBase + std::marker::Sync,
+    F: FnOnce(Arc<UserPair<T>>, NetworkMessage<T>) -> Fut + Send + 'static + Copy,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    let connect_pool: Arc<ConnectionPool> = Arc::new(ConnectionPool::new());
+
+    let listener = setup(port).await?;
+
+    let inbound_addr = listener.local_addr()?;
+
+    info!("Participant Address: {:?}", &inbound_addr);
+
+    // Talk to LookUp Server and get initial connections
+    if let Some(addr) = pair.node.account.profile.lookup_address.clone() {
+        match initial_lookup(Arc::clone(&pair), addr, inbound_addr.to_string()).await {
+            Ok(_) => debug!("Initial Lookup Success"),
+            Err(e) => error!("Initial Lookup Error: {}", e),
+        };
+    }
+
+    let inbound_fut = inbound(
+        Arc::clone(&pair),
+        Arc::clone(&connect_pool),
+        listener,
+        state_machine,
+    );
+
+    let pair_cpy = Arc::clone(&pair);
+    let outgoing_fut = tokio::spawn(async move {
+        outgoing_connections(pair_cpy, Arc::clone(&connect_pool))
+            .await
+            .unwrap()
+    });
+
+    match join!(inbound_fut, outgoing_fut) {
+        (Ok(_), Err(e)) => error!("Error in futures: {}", e),
+        (Err(e), Ok(_)) => error!("Error in futures: {}", e),
+        (Err(e1), Err(e2)) => error!("Multiple Errors in futures: {} and {}", e1, e2),
+        _ => debug!("All fine!"),
+    };
 
     Ok(())
 }
