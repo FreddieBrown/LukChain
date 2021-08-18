@@ -186,7 +186,7 @@ async fn lookup_strike<T: 'static + BlockChainBase>(address: String, conn_id: u1
     Ok(())
 }
 
-async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
+pub async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
     pair: Arc<UserPair<T>>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {

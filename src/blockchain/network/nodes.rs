@@ -97,4 +97,16 @@ impl<T: BlockChainBase> Node<T> {
         let mut unlocked = self.blockchain.write().await;
         unlocked.append(block, pair).await
     }
+
+    /// Gets the last hash from the blockchain
+    pub async fn last_hash(&self) -> Option<String> {
+        let unlocked = self.blockchain.read().await;
+        unlocked.last_hash()
+    }
+
+    /// Adds [`Event`] to loose_events
+    pub async fn add_loose_event(&self, event: Event<T>) {
+        let mut unlocked = self.loose_events.write().await;
+        unlocked.push(event);
+    }
 }
