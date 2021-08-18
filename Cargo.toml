@@ -1,8 +1,12 @@
 [package]
-name = "blockchat"
+name = "luk_chain"
 version = "0.1.0"
 authors = ["Freddie Brown <fred@noser.net>"]
 edition = "2018"
+
+[lib]
+name = "luk_chain"
+path = "src/lib.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

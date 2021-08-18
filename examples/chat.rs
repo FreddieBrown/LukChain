@@ -1,4 +1,4 @@
-use blockchat::{
+use luk_chain::{
     config::{Config, Profile},
     network::{
         lookup_run,
@@ -37,9 +37,9 @@ lazy_static! {
 }
 
 const HELP: &str = "\
-BlockChat
+Chat
 USAGE:
-  blochat [OPTIONS] --log LEVEL [INPUT]
+  chat [OPTIONS] --log LEVEL [INPUT]
 FLAGS:
   -h, --help            Prints help information
 OPTIONS:

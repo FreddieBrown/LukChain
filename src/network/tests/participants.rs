@@ -1,6 +1,7 @@
 use crate::{
+    config::Profile,
     network::{participants::shared::*, ConnectionPool, Role},
-    Block, BlockChain, Data, Event, Profile, UserPair,
+    Block, BlockChain, Data, Event, UserPair,
 };
 
 use std::net::SocketAddr;

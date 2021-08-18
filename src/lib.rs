@@ -16,9 +16,7 @@ mod tests;
 
 pub use self::{
     blockchain::{Block, BlockChain},
-    config::Profile,
     events::{Data, Event},
-    network::{JobSync, Node, Role},
     traits::BlockChainBase,
     userpair::UserPair,
 };
