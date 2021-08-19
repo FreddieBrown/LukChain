@@ -47,10 +47,8 @@ impl Account {
         priv_key: RsaPrivateKey,
         id: u128,
     ) -> Self {
-        let profile_use = profile.clone();
-
-        let block_size: usize = if profile_use.block_size.is_some() {
-            profile_use.block_size.unwrap()
+        let block_size: usize = if (&profile.block_size).is_some() {
+            profile.block_size.unwrap()
         } else {
             10
         };

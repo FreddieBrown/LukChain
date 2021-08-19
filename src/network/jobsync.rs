@@ -99,10 +99,10 @@ impl<T: BlockChainBase> JobSync<T> {
     }
 
     /// Writes block back to the app logic using channel
-    pub async fn write_block(&self, block: Block<T>) -> Result<()> {
+    pub async fn write_block(&self, block: &Block<T>) -> Result<()> {
         if self.app_permission {
             // let mut wb_unlocked = self.outbound_channel.0;
-            match self.app_channel.0.send(block) {
+            match self.app_channel.0.send(block.clone()) {
                 Ok(_) => self.app_notify.notify_one(),
                 Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),
             };

@@ -32,9 +32,9 @@ impl<T: BlockChainBase> UserPair<T> {
             PersistentInformation::new(profile.user_location.clone());
         let sync = JobSync::new(write_back);
         let node: Node<T> = if matches!(role, Role::Miner) {
-            Node::genesis(profile.clone(), &sync, pinfo).await?
+            Node::genesis(profile, &sync, pinfo).await?
         } else {
-            Node::new(role, profile.clone(), pinfo)
+            Node::new(role, profile, pinfo)
         };
 
         Ok(Self { sync, node })

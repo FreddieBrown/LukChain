@@ -70,7 +70,7 @@ impl<T: BlockChainBase> BlockChain<T> {
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap(),
                 pending_events: Vec::new(),
-                blc_location: Some(path.clone()),
+                blc_location: Some(path),
             };
 
             // Write to [`BlockChain`] file
@@ -119,7 +119,7 @@ impl<T: BlockChainBase> BlockChain<T> {
         // Go through each event and check the data enclosed
         if block.execute(&self.users) {
             // Write back block
-            pair.sync.write_block(block.clone()).await?;
+            pair.sync.write_block(&block).await?;
 
             // If valid, append to [`BlockChain`] and return [`Ok`]
             self.chain.push(block);
@@ -206,7 +206,7 @@ impl<T: BlockChainBase> BlockChain<T> {
 
     /// Writes the current state of the [`BlockChain`] to its specified file
     pub fn save(&self) -> Result<()> {
-        if let Some(loc) = self.blc_location.clone() {
+        if let Some(loc) = &self.blc_location {
             let mut file = File::create(loc)?;
 
             bincode::serialize_into(&mut file, self)?;

@@ -85,10 +85,10 @@ impl<T: BlockChainBase> Event<T> {
     /// Verifies the associated signature in the [`Event`]
     pub fn verify_sign(&self, pub_key: &RsaPublicKey) -> bool {
         let hash = self.calculate_hash();
-        if let Some(s) = self.signature.clone() {
+        if let Some(s) = &self.signature {
             let padding = PaddingScheme::new_pkcs1v15_sign(None);
 
-            return match pub_key.verify(padding, &hash, &s) {
+            return match pub_key.verify(padding, &hash, s) {
                 Ok(_) => true,
                 _ => false,
             };
