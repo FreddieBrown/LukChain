@@ -108,7 +108,7 @@ async fn process_lookup<T: 'static + BlockChainBase>(
             }
             _ => MessageData::NoAddr,
         });
-        send_message(&mut stream, send_mess).await?;
+        send_message(&mut stream, &send_mess).await?;
     }
 }
 

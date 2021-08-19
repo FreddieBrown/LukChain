@@ -33,7 +33,7 @@ pub async fn users_state_machine<T: BlockChainBase + 'static>(
                     .sync
                     .outbound_channel
                     .0
-                    .send(ProcessMessage::SendMessage(message.clone()))
+                    .send(ProcessMessage::SendMessage(message))
                 {
                     Ok(_) => pair.sync.new_permit(),
                     Err(e) => return Err(Error::msg(format!("Error writing block: {}", e))),

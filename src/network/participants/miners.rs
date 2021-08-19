@@ -51,7 +51,7 @@ pub async fn miners_state_machine<T: BlockChainBase + 'static>(
                     // Create new block and add to chain
                     let mut block: Block<T> = Block::new(last_hash);
                     block.add_events(unlocked_events.clone());
-                    bc_unlocked.append(block.clone(), Arc::clone(&pair)).await?;
+                    bc_unlocked.append(&block, Arc::clone(&pair)).await?;
 
                     // Write updated chain to file
                     bc_unlocked.save()?;

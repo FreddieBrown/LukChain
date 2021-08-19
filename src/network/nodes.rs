@@ -31,14 +31,14 @@ impl<T: BlockChainBase> Node<T> {
     /// Creats a new [`Node`] instance
     pub fn new(role: Role, profile: Profile, persistent: PersistentInformation) -> Self {
         Self {
+            blockchain: RwLock::new(BlockChain::new(profile.bc_location.clone())),
             account: Account::new(
                 role,
-                profile.clone(),
+                profile,
                 persistent.pub_key,
                 persistent.priv_key,
                 persistent.id,
             ),
-            blockchain: RwLock::new(BlockChain::new(profile.bc_location.clone())),
             loose_events: RwLock::new(Vec::new()),
         }
     }
@@ -60,7 +60,7 @@ impl<T: BlockChainBase> Node<T> {
         );
 
         let genesis: Block<T> = Block::new(None);
-        sync.write_block(genesis.clone()).await?;
+        sync.write_block(&genesis).await?;
         initial_bc.chain.push(genesis);
 
         #[cfg(not(test))]
@@ -94,7 +94,7 @@ impl<T: BlockChainBase> Node<T> {
     /// Adds a [`Block`] to the underlying [`BlockChain`]
     pub async fn add_block(&self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
         let mut unlocked = self.blockchain.write().await;
-        unlocked.append(block, pair).await
+        unlocked.append(&block, pair).await
     }
 
     /// Gets the last hash from the blockchain
