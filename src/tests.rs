@@ -51,7 +51,7 @@ async fn add_block_to_blockchain() {
     );
     block.add_event(event);
     assert!(block.get_event_count() == 1);
-    assert!(bc.append(block, pair).await.is_ok());
+    assert!(bc.append(&block, pair).await.is_ok());
     assert!(bc.chain.len() == 1);
 }
 

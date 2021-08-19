@@ -59,7 +59,7 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
         pair.node.account.role,
     ));
 
-    send_message(&mut stream, reg_message).await?;
+    send_message(&mut stream, &reg_message).await?;
 
     debug!("Sent Reg Message");
 
@@ -75,7 +75,7 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
             pair.node.account.profile.lookup_filter,
         ));
 
-        send_message(&mut stream, gen_req).await?;
+        send_message(&mut stream, &gen_req).await?;
 
         debug!("Sent Message");
 
@@ -105,7 +105,7 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
     }
 
     let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
-    send_message(&mut stream, finish_message).await?;
+    send_message(&mut stream, &finish_message).await?;
 
     debug!("FINISHED INITIAL LOOKUP");
 
@@ -133,7 +133,7 @@ async fn general_lookup<T: 'static + BlockChainBase>(
         pair.node.account.profile.lookup_filter,
     ));
 
-    send_message(&mut stream, gen_req).await?;
+    send_message(&mut stream, &gen_req).await?;
 
     debug!("Sent Message");
 
@@ -157,14 +157,14 @@ async fn general_lookup<T: 'static + BlockChainBase>(
         }
         MessageData::NoAddr => {
             let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
-            send_message(&mut stream, finish_message).await?;
+            send_message(&mut stream, &finish_message).await?;
             return Err(Error::msg("No addresses in the lookup table"));
         }
         _ => unreachable!(),
     }
 
     let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
-    send_message(&mut stream, finish_message).await?;
+    send_message(&mut stream, &finish_message).await?;
 
     Ok(())
 }
@@ -179,7 +179,7 @@ async fn lookup_strike<T: 'static + BlockChainBase>(address: String, conn_id: u1
     // Create general request message and send over stream
     let gen_req = NetworkMessage::<T>::new(MessageData::Strike(conn_id));
 
-    send_message(&mut stream, gen_req).await?;
+    send_message(&mut stream, &gen_req).await?;
 
     debug!("Sent Message");
 
@@ -200,8 +200,8 @@ pub async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
         // Remove item from connection pool
         map_write.remove(&id);
         // Send strike message to lookup
-        if let Some(addr) = pair.node.account.profile.lookup_address.clone() {
-            lookup_strike::<T>(addr, id).await?;
+        if let Some(addr) = &pair.node.account.profile.lookup_address {
+            lookup_strike::<T>(String::from(addr), id).await?;
         }
     }
 
@@ -228,7 +228,7 @@ async fn create_connection<T: BlockChainBase>(
         pair.node.account.pub_key.clone(),
         pair.node.account.role,
     ));
-    send_message(&mut stream, send_mess).await?;
+    send_message(&mut stream, &send_mess).await?;
 
     // Recv initial message with ID
     let (id, pub_key, role) = match initial_stream_handler::<T>(&mut stream).await {
@@ -239,7 +239,7 @@ async fn create_connection<T: BlockChainBase>(
     // Transmit initial bc state
     let bc_read = pair.node.blockchain.read().await;
     let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
-    send_message(&mut stream, bc_mess).await?;
+    send_message(&mut stream, &bc_mess).await?;
 
     // Add to map
     match connect_pool
@@ -271,7 +271,7 @@ async fn send_all<T: BlockChainBase>(
 
         debug!("Sending message to: {:?}", tcp.addr);
 
-        match send_message(stream.deref_mut(), message.clone()).await {
+        match send_message(stream.deref_mut(), &message).await {
             Ok(_) => Ok(()),
             Err(e) => {
                 error!("ERROR SENDING TO: {}", id);
@@ -331,12 +331,12 @@ async fn process_connection<T: 'static + BlockChainBase>(
         pair.node.account.pub_key.clone(),
         pair.node.account.role,
     ));
-    send_message(&mut stream, send_mess).await?;
+    send_message(&mut stream, &send_mess).await?;
 
     // Transmit initial bc state
     let bc_read = pair.node.blockchain.read().await;
     let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
-    send_message(&mut stream, bc_mess).await?;
+    send_message(&mut stream, &bc_mess).await?;
 
     let conn = Connection::new(stream, role, Some(pub_key));
     match connect_pool.add(conn, id).await {
@@ -495,7 +495,7 @@ pub async fn outgoing_connections<T: 'static + BlockChainBase>(
                     // TODO: If Miner, and event is being sent, add it to block queue
                     if num_conns == 0 {
                         debug!("No connections, so adding to unsent queue");
-                        unsent_q.push(m.clone());
+                        unsent_q.push(m);
                         continue;
                     }
                     match send_all(
@@ -519,10 +519,8 @@ pub async fn outgoing_connections<T: 'static + BlockChainBase>(
                     {
                         Ok(_) => debug!("CONNECTION CREATION SUCCESS"),
                         Err(e) => {
-                            if let Some(lookup_addr) =
-                                pair.node.account.profile.lookup_address.clone()
-                            {
-                                lookup_strike::<T>(lookup_addr, id.clone()).await?;
+                            if let Some(lookup_addr) = &pair.node.account.profile.lookup_address {
+                                lookup_strike::<T>(String::from(lookup_addr), *id).await?;
                             }
                             error!("CONNECTION CREATION FAILED: {}", e)
                         }
@@ -661,8 +659,14 @@ where
     info!("Participant Address: {:?}", &inbound_addr);
 
     // Talk to LookUp Server and get initial connections
-    if let Some(addr) = pair.node.account.profile.lookup_address.clone() {
-        match initial_lookup(Arc::clone(&pair), addr, inbound_addr.to_string()).await {
+    if let Some(addr) = &pair.node.account.profile.lookup_address {
+        match initial_lookup(
+            Arc::clone(&pair),
+            String::from(addr),
+            inbound_addr.to_string(),
+        )
+        .await
+        {
             Ok(_) => debug!("Initial Lookup Success"),
             Err(e) => error!("Initial Lookup Error: {}", e),
         };

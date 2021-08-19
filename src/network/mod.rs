@@ -32,7 +32,7 @@ use tracing::debug;
 /// [`ConnectionPool`] so they are aware of the information which is bein spread.
 pub(crate) async fn send_message<T: BlockChainBase, S: AsyncWriteExt + Send + Unpin>(
     stream: &mut S,
-    message: messages::NetworkMessage<T>,
+    message: &messages::NetworkMessage<T>,
 ) -> Result<()> {
     debug!("Sending Message: {:?}", &message);
     let bytes_message = message.as_bytes();

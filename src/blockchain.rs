@@ -106,7 +106,7 @@ impl<T: BlockChainBase> BlockChain<T> {
     ///
     /// [`id`] is the ID of the user who is in charge of the local instance of the
     /// [`BlockChain`]
-    pub async fn append(&mut self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
+    pub async fn append(&mut self, block: &Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
         // Validate [`Block`]
         if !block.verify_hash() {
             return Err(Error::msg("Own hash could not be varified"));
@@ -119,10 +119,10 @@ impl<T: BlockChainBase> BlockChain<T> {
         // Go through each event and check the data enclosed
         if block.execute(&self.users) {
             // Write back block
-            pair.sync.write_block(&block).await?;
+            pair.sync.write_block(block).await?;
 
             // If valid, append to [`BlockChain`] and return [`Ok`]
-            self.chain.push(block);
+            self.chain.push(block.clone());
         }
 
         Ok(())

@@ -94,7 +94,7 @@ impl<T: BlockChainBase> Node<T> {
     /// Adds a [`Block`] to the underlying [`BlockChain`]
     pub async fn add_block(&self, block: Block<T>, pair: Arc<UserPair<T>>) -> Result<()> {
         let mut unlocked = self.blockchain.write().await;
-        unlocked.append(block, pair).await
+        unlocked.append(&block, pair).await
     }
 
     /// Gets the last hash from the blockchain
