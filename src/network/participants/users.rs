@@ -3,7 +3,7 @@
 use crate::{
     network::{
         messages::{MessageData, NetworkMessage, ProcessMessage},
-        participants::shared::{add_block, replace_blockchain},
+        participants::shared::add_block,
     },
     BlockChainBase, UserPair,
 };
@@ -53,15 +53,13 @@ pub async fn users_state_machine<T: BlockChainBase + 'static>(
             Ok(())
         }
         MessageData::State(bc) => {
-            debug!("New blockchain received");
             // Check if valid
             if bc.validate_chain().is_ok() {
-                debug!("New blockchain is valid");
-
                 // If valid, check if it is a subchain of current blockchain
                 if bc.len() > pair.node.bc_len().await && pair.node.chain_overlap(&bc).await > 0.5 {
                     // If longer and contains more than half of original chain, replace
-                    replace_blockchain(Arc::clone(&pair), bc).await?;
+                    debug!("Updating stored blockchain");
+                    pair.replace_blockchain(bc).await?;
                 }
                 // If shorter, ignore
             }

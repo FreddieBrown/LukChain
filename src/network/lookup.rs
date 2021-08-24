@@ -46,7 +46,7 @@ pub async fn lookup_run<T: 'static + BlockChainBase>(port: Option<u16>) -> Resul
 
     let listener = TcpListener::bind(&socket).await?;
 
-    info!("Running on: {}", &socket);
+    info!("LookUp Address: {}", &socket);
 
     while let Ok((inbound, _)) = listener.accept().await {
         debug!("New Inbound Connection: {:?}", inbound.peer_addr());
@@ -157,7 +157,7 @@ async fn strike(id: u128, address_table: AddressTable) -> Result<()> {
         assert!(size > 0);
         if size > 10 {
             unlocked_table.remove(&key);
-            debug!("REMOVING: {}", &key);
+            info!("Strike Limit Reached: Node {}", &key);
         }
     }
     // If too many strikes, remove from address table
