@@ -67,7 +67,7 @@ impl Account {
 
     /// Creates new [`Event`] and signs it
     pub fn new_event<T: BlockChainBase>(&self, data: T) -> Event<T> {
-        debug!("New Event: {:?}", data);
+        debug!("Create Event: {:?}", data);
         let mut event = Event::new(self.id, data);
         self.sign_event(&mut event);
         event
@@ -75,8 +75,6 @@ impl Account {
 
     /// Provided an already created [`Event`], signs it
     pub fn sign_event<T: BlockChainBase>(&self, event: &mut Event<T>) {
-        debug!("Signing Event: {:?}", event);
-
         let bytes = event.calculate_hash();
         let padding = PaddingScheme::new_pkcs1v15_sign(None);
         let enc_data = self
@@ -89,8 +87,6 @@ impl Account {
 
     /// Given encrypted data, decrypts it using own private key
     pub fn decrypt_msg(&self, enc_data: &Vec<u8>) -> Vec<u8> {
-        debug!("Decrypting Message: {:?}", &enc_data);
-
         let padding = PaddingScheme::new_pkcs1v15_encrypt();
         self.priv_key
             .decrypt(padding, enc_data)
@@ -99,8 +95,6 @@ impl Account {
 
     /// Given a public key, encrypts a vector of bytes
     pub fn encrypt_msg(&self, data: &Vec<u8>, pub_key: &RsaPublicKey) -> Vec<u8> {
-        debug!("Encrypting Message: {:?}", &data);
-
         let mut rng = rand::thread_rng();
         let padding = PaddingScheme::new_pkcs1v15_encrypt();
         pub_key

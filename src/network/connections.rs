@@ -57,7 +57,7 @@ impl ConnectionPool {
             map.insert(id, connection);
             Ok(())
         } else {
-            Err(Error::msg("ALREADY IN CONNECTION POOL"))
+            Err(Error::msg("Connection with node already formed"))
         }
     }
 

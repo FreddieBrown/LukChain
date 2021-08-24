@@ -8,7 +8,6 @@ use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
     Notify, RwLock,
 };
-use tracing::debug;
 
 /// Synchronisation struct to maintain the job queue
 #[derive(Debug)]
@@ -65,13 +64,10 @@ impl<T: BlockChainBase> JobSync<T> {
 
     /// Adds a new permit to the synchronisation mechanism
     pub fn new_permit(&self) {
-        debug!("Creating new permit");
-
         let waiters: usize = self.waiters.load(Ordering::SeqCst);
         self.permits.fetch_add(1, Ordering::SeqCst);
 
         if waiters >= 1 {
-            debug!("Notifing");
             self.notify.notify_one();
         }
     }
@@ -81,21 +77,13 @@ impl<T: BlockChainBase> JobSync<T> {
     /// Claims a permit if one exists, if no permits exist, it will
     /// wait until a permit is available.
     pub async fn claim_permit(&self) {
-        debug!("Claiming permit");
         let permits: usize = self.permits.load(Ordering::SeqCst);
         if permits == 0 {
             self.waiters.fetch_add(1, Ordering::SeqCst);
-            debug!("No available permits, Waiting for permit");
             self.notify.notified().await;
-            let permits: usize = self.permits.load(Ordering::SeqCst);
-            debug!("Permit now available: {}", permits);
             self.waiters.fetch_sub(1, Ordering::SeqCst);
         }
         self.permits.fetch_sub(1, Ordering::SeqCst);
-        debug!(
-            "Claimed permit. Permits left: {}",
-            self.permits.load(Ordering::SeqCst)
-        );
     }
 
     /// Writes block back to the app logic using channel

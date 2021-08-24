@@ -25,7 +25,6 @@ pub async fn miners_state_machine<T: BlockChainBase + 'static>(
     match &message.data {
         MessageData::Event(e) => {
             // If miner, add it to list of events to build Block
-            debug!("Recv Event: {:?}", e);
             let mut unlocked_events = pair.node.loose_events.write().await;
             let mut bc_unlocked = pair.node.blockchain.write().await;
             let mut ns_unlocked = pair.sync.nonce_set.write().await;
@@ -34,7 +33,7 @@ pub async fn miners_state_machine<T: BlockChainBase + 'static>(
                 && !unlocked_events.contains(&e)
                 && !bc_unlocked.contains(&e)
             {
-                debug!("Event is new");
+                debug!("New Event: {:?}", e);
                 // If it is not, add to set
                 unlocked_events.push(e.clone());
                 // if Vec over threshold size, build block and empty loose_events
@@ -45,7 +44,7 @@ pub async fn miners_state_machine<T: BlockChainBase + 'static>(
                 };
 
                 if unlocked_events.len() >= thresh {
-                    debug!("Building new block");
+                    debug!("New Block");
                     let last_hash = bc_unlocked.last_hash();
 
                     // Create new block and add to chain
@@ -86,14 +85,12 @@ pub async fn miners_state_machine<T: BlockChainBase + 'static>(
             Ok(())
         }
         MessageData::State(bc) => {
-            debug!("New blockchain received");
             // Check if valid
             if bc.validate_chain().is_ok() {
-                debug!("New blockchain is valid");
-
                 // If valid, check if it is a subchain of current blockchain
                 if bc.len() > pair.node.bc_len().await && pair.node.chain_overlap(&bc).await > 0.5 {
                     // If longer and contains more than half of original chain, replace
+                    debug!("Updating stored blockchain");
                     pair.replace_blockchain(bc).await?;
                 }
                 // If shorter, ignore

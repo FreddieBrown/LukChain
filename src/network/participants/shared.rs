@@ -61,8 +61,6 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
 
     send_message(&mut stream, &reg_message).await?;
 
-    debug!("Sent Reg Message");
-
     if matches!(
         NetworkMessage::<T>::from_stream(&mut stream, &mut buffer)
             .await?
@@ -77,11 +75,7 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
 
         send_message(&mut stream, &gen_req).await?;
 
-        debug!("Sent Message");
-
         let read_in = NetworkMessage::<T>::from_stream(&mut stream, &mut buffer).await?;
-
-        debug!("Read Message");
 
         match read_in.data {
             MessageData::PeerAddresses(addrs) => {
@@ -107,8 +101,6 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
     let finish_message = NetworkMessage::<T>::new(MessageData::Finish);
     send_message(&mut stream, &finish_message).await?;
 
-    debug!("FINISHED INITIAL LOOKUP");
-
     Ok(())
 }
 
@@ -119,10 +111,15 @@ pub async fn initial_lookup<T: 'static + BlockChainBase>(
 /// its database.
 async fn general_lookup<T: 'static + BlockChainBase>(
     pair: Arc<UserPair<T>>,
-    address: String,
+    lookup_address: Option<String>,
 ) -> Result<()> {
     let mut buffer = [0_u8; 4096];
-    debug!("GENERAL LOOKUP");
+
+    let address = match lookup_address {
+        Some(a) => a,
+        None => return Err(Error::msg("No LookUp Address")),
+    };
+
     debug!("Creating LookUp Connection with: {}", address);
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
@@ -135,11 +132,7 @@ async fn general_lookup<T: 'static + BlockChainBase>(
 
     send_message(&mut stream, &gen_req).await?;
 
-    debug!("Sent Message");
-
     let read_in = NetworkMessage::<T>::from_stream(&mut stream, &mut buffer).await?;
-
-    debug!("Read Message");
 
     match read_in.data {
         MessageData::PeerAddresses(addrs) => {
@@ -171,8 +164,7 @@ async fn general_lookup<T: 'static + BlockChainBase>(
 
 /// Connects to the lookup server and sends a [`Strike`] message
 async fn lookup_strike<T: 'static + BlockChainBase>(address: String, conn_id: u128) -> Result<()> {
-    debug!("SENDING STRIKE");
-    debug!("Creating LookUp Connection with: {}", address);
+    debug!("Sending Strike to: {}", address);
     // Open connection
     let mut stream: TcpStream = TcpStream::connect(address).await?;
 
@@ -180,8 +172,6 @@ async fn lookup_strike<T: 'static + BlockChainBase>(address: String, conn_id: u1
     let gen_req = NetworkMessage::<T>::new(MessageData::Strike(conn_id));
 
     send_message(&mut stream, &gen_req).await?;
-
-    debug!("Sent Message");
 
     Ok(())
 }
@@ -194,9 +184,8 @@ pub async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
     let size = cp_buffer_write.len();
     let mut map_write = connect_pool.map.write().await;
 
-    debug!("CLEARING CONNECTION POOL");
+    debug!("Removing dead connections from ConnectionPool");
     while let Some(id) = cp_buffer_write.pop() {
-        debug!("REMOVING: {}", &id);
         // Remove item from connection pool
         map_write.remove(&id);
         // Send strike message to lookup
@@ -218,7 +207,6 @@ async fn send_all<T: BlockChainBase>(
     message: NetworkMessage<T>,
     connect_pool: Arc<ConnectionPool>,
 ) -> Result<()> {
-    debug!("Sending message to all connected participants");
     let conn_map = connect_pool.map.read().await;
     for (id, conn) in conn_map.iter() {
         let tcp = conn.get_tcp();
@@ -229,10 +217,10 @@ async fn send_all<T: BlockChainBase>(
         match send_message(stream.deref_mut(), &message).await {
             Ok(_) => Ok(()),
             Err(e) => {
-                error!("ERROR SENDING TO: {}", id);
+                error!("Error sending message to: {}", id);
                 pair.sync.cp_clear.store(true, Ordering::SeqCst);
                 let mut cp_buffer_cpy = pair.sync.cp_buffer.write().await;
-                cp_buffer_cpy.push(id.clone());
+                cp_buffer_cpy.push(*id);
                 Err(e)
             }
         }?;
@@ -461,26 +449,23 @@ pub async fn outgoing_connections<T: 'static + BlockChainBase>(
         if num_conns == 0 && pair.node.account.profile.lookup_address.is_some() {
             match general_lookup(
                 Arc::clone(&pair),
-                pair.node.account.profile.lookup_address.clone().unwrap(),
+                pair.node.account.profile.lookup_address.clone(),
             )
             .await
             {
                 Ok(_) => (),
                 Err(e) => {
-                    error!("GENERAL LOOKUP FAILED: {}", e);
+                    error!("General LookUp failed: {}", e);
                     sleep(Duration::from_millis(10000)).await;
                 }
             };
         }
 
-        info!("CHECKING PERMIT");
         // Wait until there is something in the pipeline
         pair.sync.claim_permit().await;
-        info!("CLAIMED PERMIT");
 
         let num_conns: usize = pair.sync.cp_size.load(Ordering::SeqCst);
 
-        debug!("NUMBER OF CONNS: {}", num_conns);
         // Read pipeline for s
         let mut rx = pair.sync.outbound_channel.1.write().await;
         // When new message comes through pipeline
@@ -505,8 +490,8 @@ pub async fn outgoing_connections<T: 'static + BlockChainBase>(
                     )
                     .await
                     {
-                        Ok(_) => debug!("MESSAGE SENDING SUCCESS"),
-                        Err(e) => error!("MESSAGE SENDING ERROR: {}", e),
+                        Ok(_) => debug!("Message sent successfully"),
+                        Err(e) => error!("Error sending message: {}", e),
                     };
                 }
                 ProcessMessage::NewConnection(id, addr) => {
@@ -517,12 +502,12 @@ pub async fn outgoing_connections<T: 'static + BlockChainBase>(
                     )
                     .await
                     {
-                        Ok(_) => debug!("CONNECTION CREATION SUCCESS"),
+                        Ok(_) => debug!("Created a new Connection"),
                         Err(e) => {
                             if let Some(lookup_addr) = &pair.node.account.profile.lookup_address {
                                 lookup_strike::<T>(String::from(lookup_addr), *id).await?;
                             }
-                            error!("CONNECTION CREATION FAILED: {}", e)
+                            error!("Failed to create a new Connection: {}", e)
                         }
                     }
                 }
@@ -576,7 +561,6 @@ where
                 .await?
             } else {
                 // Sleep for a moment (10 seconds?)
-                debug!("NO CONNECTIONS");
                 sleep(Duration::from_millis(1000)).await;
             }
         }
