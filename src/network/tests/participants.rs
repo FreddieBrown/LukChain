@@ -64,7 +64,7 @@ async fn test_replace_blockchain_works() {
 
     let new_bc: BlockChain<Data> = BlockChain::new(None);
 
-    assert!(replace_blockchain(Arc::clone(&pair), &new_bc).await.is_ok());
+    assert!(pair.replace_blockchain(&new_bc).await.is_ok());
 
     let unlocked_bc = pair.node.blockchain.write().await;
 

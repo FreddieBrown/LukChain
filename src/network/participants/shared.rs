@@ -6,7 +6,7 @@ use crate::{
         messages::{traits::ReadLengthPrefix, MessageData, NetworkMessage, ProcessMessage},
         send_message,
     },
-    Block, BlockChain, BlockChainBase, Event, UserPair,
+    Block, BlockChainBase, Event, UserPair,
 };
 
 use std::future::Future;
@@ -209,51 +209,6 @@ pub async fn clear_connection_pool<T: 'static + BlockChainBase + Send>(
     Ok(())
 }
 
-/// Given an address and port, creates connection with new node
-///
-/// Function is passed an address and a port and it will attempt to
-/// create a TCP connection with the node at that address
-async fn create_connection<T: BlockChainBase>(
-    pair: Arc<UserPair<T>>,
-    address: String,
-    connect_pool: Arc<ConnectionPool>,
-) -> Result<()> {
-    debug!("Creating Connection with: {}", address);
-    // Open connection
-    let mut stream: TcpStream = TcpStream::connect(address).await?;
-
-    // Send initial message with ID
-    let send_mess = NetworkMessage::<T>::new(MessageData::InitialID(
-        pair.node.account.id,
-        pair.node.account.pub_key.clone(),
-        pair.node.account.role,
-    ));
-    send_message(&mut stream, &send_mess).await?;
-
-    // Recv initial message with ID
-    let (id, pub_key, role) = match initial_stream_handler::<T>(&mut stream).await {
-        Some((id, pub_key, role)) => (id, pub_key, role),
-        _ => return Err(Error::msg("Error getting initial data Message")),
-    };
-
-    // Transmit initial bc state
-    let bc_read = pair.node.blockchain.read().await;
-    let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
-    send_message(&mut stream, &bc_mess).await?;
-
-    // Add to map
-    match connect_pool
-        .add(Connection::new(stream, role, Some(pub_key)), id)
-        .await
-    {
-        Ok(_) => {
-            pair.sync.cp_size.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        }
-        Err(e) => Err(e),
-    }
-}
-
 /// Takes in [`NetworkMessage`] and sends it to all intended recipients
 ///
 /// Gets a [`NetworkMessage`] and either floods all connections with the message
@@ -359,6 +314,51 @@ async fn initial_stream_handler<T: BlockChainBase>(
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// Given an address and port, creates connection with new node
+///
+/// Function is passed an address and a port and it will attempt to
+/// create a TCP connection with the node at that address
+async fn create_connection<T: BlockChainBase>(
+    pair: Arc<UserPair<T>>,
+    address: String,
+    connect_pool: Arc<ConnectionPool>,
+) -> Result<()> {
+    debug!("Creating Connection with: {}", address);
+    // Open connection
+    let mut stream: TcpStream = TcpStream::connect(address).await?;
+
+    // Send initial message with ID
+    let send_mess = NetworkMessage::<T>::new(MessageData::InitialID(
+        pair.node.account.id,
+        pair.node.account.pub_key.clone(),
+        pair.node.account.role,
+    ));
+    send_message(&mut stream, &send_mess).await?;
+
+    // Recv initial message with ID
+    let (id, pub_key, role) = match initial_stream_handler::<T>(&mut stream).await {
+        Some((id, pub_key, role)) => (id, pub_key, role),
+        _ => return Err(Error::msg("Error getting initial data Message")),
+    };
+
+    // Transmit initial bc state
+    let bc_read = pair.node.blockchain.read().await;
+    let bc_mess = NetworkMessage::<T>::new(MessageData::State(bc_read.clone()));
+    send_message(&mut stream, &bc_mess).await?;
+
+    // Add to map
+    match connect_pool
+        .add(Connection::new(stream, role, Some(pub_key)), id)
+        .await
+    {
+        Ok(_) => {
+            pair.sync.cp_size.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -582,25 +582,6 @@ where
         }
     })
     .await?;
-
-    Ok(())
-}
-
-/// Function to replace the [`BlockChain`] in [`UserPair`]
-pub async fn replace_blockchain<T: 'static + BlockChainBase + std::marker::Sync>(
-    pair: Arc<UserPair<T>>,
-    bc: &BlockChain<T>,
-) -> Result<()> {
-    info!("New blockchain received, old Blockchain replaced");
-    let mut bc_unlocked = pair.node.blockchain.write().await;
-
-    // Set new save blockchain location to one of previous blockchain
-    let mut new_bc = bc.clone();
-    new_bc.set_save_location(bc_unlocked.save_location());
-
-    // Save new blockchain
-    *bc_unlocked = new_bc;
-    bc_unlocked.save()?;
 
     Ok(())
 }

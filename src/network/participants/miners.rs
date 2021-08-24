@@ -3,7 +3,7 @@
 use crate::{
     network::{
         messages::{MessageData, NetworkMessage, ProcessMessage},
-        participants::shared::{add_block, replace_blockchain},
+        participants::shared::add_block,
     },
     Block, BlockChainBase, UserPair,
 };
@@ -94,7 +94,7 @@ pub async fn miners_state_machine<T: BlockChainBase + 'static>(
                 // If valid, check if it is a subchain of current blockchain
                 if bc.len() > pair.node.bc_len().await && pair.node.chain_overlap(&bc).await > 0.5 {
                     // If longer and contains more than half of original chain, replace
-                    replace_blockchain(Arc::clone(&pair), bc).await?;
+                    pair.replace_blockchain(bc).await?;
                 }
                 // If shorter, ignore
             }

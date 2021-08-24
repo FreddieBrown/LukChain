@@ -12,6 +12,7 @@ use anyhow::Result;
 use rand::prelude::*;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 /// Wrapper struct containing information needed for each user
 #[derive(Debug)]
@@ -38,6 +39,22 @@ impl<T: BlockChainBase> UserPair<T> {
         };
 
         Ok(Self { sync, node })
+    }
+
+    /// Function to replace the [`BlockChain`] in [`UserPair`]
+    pub async fn replace_blockchain(&self, bc: &BlockChain<T>) -> Result<()> {
+        info!("New blockchain received, old Blockchain replaced");
+        let mut bc_unlocked = self.node.blockchain.write().await;
+
+        // Set new save blockchain location to one of previous blockchain
+        let mut new_bc = bc.clone();
+        new_bc.set_save_location(bc_unlocked.save_location());
+
+        // Save new blockchain
+        *bc_unlocked = new_bc;
+        bc_unlocked.save()?;
+
+        Ok(())
     }
 }
 
